@@ -1,16 +1,21 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import * as Haptics from 'expo-haptics';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { triggerSelection } from '../lib/haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { House, Folder, ChatCircle, User } from 'phosphor-react-native';
 import HomeScreen from '../screens/tabs/HomeScreen';
 import CollectionsScreen from '../screens/tabs/CollectionsScreen';
 import ScanScreen from '../screens/tabs/ScanScreen';
 import CommunityScreen from '../screens/tabs/CommunityScreen';
 import ProfileScreen from '../screens/tabs/ProfileScreen';
-
-const ACCENT = '#c9a227';
+import { useThemeColors } from '../theme/useThemeColors';
+import {
+  HomeIcon,
+  FolderIcon,
+  ScanIcon,
+  MessageIcon,
+  UserIcon,
+} from '../components/icons/NavigationIcons';
 
 export type MainTabParamList = {
   Home: undefined;
@@ -23,27 +28,33 @@ export type MainTabParamList = {
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 const TAB_CONFIG = [
-  { name: 'Home' as const, label: 'Home', Icon: House },
-  { name: 'Collections' as const, label: 'Collections', Icon: Folder },
+  { name: 'Home' as const, label: 'Home', Icon: HomeIcon },
+  { name: 'Collections' as const, label: 'Collections', Icon: FolderIcon },
   { name: 'Scan' as const, label: '', Icon: null },
-  { name: 'Community' as const, label: 'Community', Icon: ChatCircle },
-  { name: 'Profile' as const, label: 'Profile', Icon: User },
+  { name: 'Community' as const, label: 'Community', Icon: MessageIcon },
+  { name: 'Profile' as const, label: 'Profile', Icon: UserIcon },
 ];
 
 function CustomTabBar({ state, descriptors, navigation }: any) {
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
 
   return (
-    <View style={[styles.tabBar, { paddingBottom: insets.bottom + 8 }]}>
+    <View
+      style={[
+        styles.tabBar,
+        {
+          paddingBottom: insets.bottom + 8,
+          backgroundColor: colors.background.bgAlt,
+        },
+      ]}
+    >
       {state.routes.map((route: { name: string; key: string }, index: number) => {
-        const { options } = descriptors[route.key];
         const isFocused = state.index === index;
         const config = TAB_CONFIG[index];
 
         const triggerTabHaptic = () => {
-          try {
-            Haptics.selectionAsync();
-          } catch (_) {}
+          triggerSelection();
         };
 
         if (config.name === 'Scan') {
@@ -53,12 +64,17 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
               style={styles.tabCenter}
               onPress={() => {
                 triggerTabHaptic();
-                navigation.navigate(route.name);
+                const parent = navigation.getParent();
+                if (parent) {
+                  parent.navigate('ScannerScreen');
+                } else {
+                  navigation.navigate(route.name);
+                }
               }}
               activeOpacity={0.8}
             >
-              <View style={styles.scanButton}>
-                <View style={styles.scanIcon} />
+              <View style={[styles.scanButton, { backgroundColor: colors.background.brand }]}>
+                <ScanIcon size={28} color={colors.text.textWhite} />
               </View>
             </TouchableOpacity>
           );
@@ -77,6 +93,8 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
         };
 
         const IconComponent = config.Icon;
+        const iconColor = isFocused ? colors.text.textBase : colors.text.textTertiary;
+
         return (
           <TouchableOpacity
             key={route.key}
@@ -84,16 +102,15 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
             onPress={onPress}
             activeOpacity={0.7}
           >
-            {IconComponent && (
-              <IconComponent
-                size={22}
-                color={isFocused ? '#000' : '#999'}
-                weight="regular"
-                style={styles.tabIcon}
-              />
-            )}
-            <Text style={[styles.tabLabel, isFocused && styles.tabActive]}>{config.label}</Text>
-            {isFocused && <View style={styles.tabIndicator} />}
+            {IconComponent && <IconComponent size={24} color={iconColor} />}
+            <Text
+              style={[
+                styles.tabLabel,
+                { color: isFocused ? colors.text.textBase : colors.text.textTertiary },
+              ]}
+            >
+              {config.label}
+            </Text>
           </TouchableOpacity>
         );
       })}
@@ -126,32 +143,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     paddingTop: 12,
     paddingHorizontal: 8,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 8,
   },
   tab: {
     alignItems: 'center',
     justifyContent: 'center',
     flex: 1,
-  },
-  tabIcon: {
-    marginBottom: 2,
+    gap: 4,
   },
   tabLabel: {
-    fontSize: 11,
-    color: '#999',
-  },
-  tabActive: {
-    color: '#000',
-  },
-  tabIndicator: {
-    position: 'absolute',
-    bottom: -2,
-    width: 24,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: '#000',
+    fontSize: 10,
+    fontWeight: '600',
+    lineHeight: 12,
   },
   tabCenter: {
     alignItems: 'center',
@@ -162,16 +169,8 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: ACCENT,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: -8,
-  },
-  scanIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: '#000',
   },
 });

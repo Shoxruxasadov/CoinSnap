@@ -1,11 +1,23 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { safeStorage } from '../lib/safeStorage';
 
 interface AuthState {
-  hasCompletedAuthFlow: boolean;
-  setAuthComplete: () => void;
+  isSkipped: boolean;
+  setSkipped: () => void;
+  resetSkipped: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
-  hasCompletedAuthFlow: false,
-  setAuthComplete: () => set({ hasCompletedAuthFlow: true }),
-}));
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set) => ({
+      isSkipped: false,
+      setSkipped: () => set({ isSkipped: true }),
+      resetSkipped: () => set({ isSkipped: false }),
+    }),
+    {
+      name: 'auth-storage',
+      storage: createJSONStorage(() => safeStorage),
+    }
+  )
+);

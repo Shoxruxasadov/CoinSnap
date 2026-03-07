@@ -11,12 +11,12 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  Vibration,
   View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
+import { triggerImpact } from '../../lib/haptics';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../navigation/RootStack';
@@ -274,15 +274,7 @@ export default function OnboardingScreen() {
   }, [currentIndex, buttonTextScale]);
 
   const triggerPageChangeHaptic = () => {
-    if (Platform.OS === 'android') {
-      Vibration.vibrate(INDICATOR_DURATION);
-    } else {
-      try {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      } catch {
-        // iOS simulator / qurilmada haptic qo‘llab-quvvatlanmasa ignore
-      }
-    }
+    triggerImpact(Haptics.ImpactFeedbackStyle.Medium, INDICATOR_DURATION);
   };
 
   useEffect(() => {

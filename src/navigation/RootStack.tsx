@@ -4,7 +4,7 @@ import OnboardingScreen from "../screens/onboarding/OnboardingScreen";
 import GetStartedScreen from "../screens/auth/GetStartedScreen";
 import SignInScreen from "../screens/auth/SignInScreen";
 import SignUpScreen from "../screens/auth/SignUpScreen";
-import MainTabs from "./MainTabs";
+import MainStack from "./MainStack";
 
 export type RootStackParamList = {
   Onboarding: undefined;
@@ -17,24 +17,23 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function getInitialRoute(
-  hasSeenOnboarding: boolean,
-  hasCompletedAuthFlow: boolean,
+  isLoggedIn: boolean,
+  isSkipped: boolean,
 ): keyof RootStackParamList {
-  if (!hasSeenOnboarding) return "Onboarding";
-  if (!hasCompletedAuthFlow) return "GetStarted";
-  return "Main";
+  if (isLoggedIn || isSkipped) return "Main";
+  return "Onboarding";
 }
 
 type RootStackProps = {
-  hasSeenOnboarding: boolean;
-  hasCompletedAuthFlow: boolean;
+  isLoggedIn: boolean;
+  isSkipped: boolean;
 };
 
 export default function RootStack({
-  hasSeenOnboarding,
-  hasCompletedAuthFlow,
+  isLoggedIn,
+  isSkipped,
 }: RootStackProps) {
-  const initialRoute = getInitialRoute(hasSeenOnboarding, hasCompletedAuthFlow);
+  const initialRoute = getInitialRoute(isLoggedIn, isSkipped);
 
   return (
     <Stack.Navigator
@@ -57,7 +56,7 @@ export default function RootStack({
       <Stack.Screen name="SignUp" component={SignUpScreen} />
       <Stack.Screen
         name="Main"
-        component={MainTabs}
+        component={MainStack}
         options={{ gestureEnabled: false }}
       />
     </Stack.Navigator>

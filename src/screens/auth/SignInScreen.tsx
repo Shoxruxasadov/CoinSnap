@@ -7,14 +7,15 @@ import {
   View,
   KeyboardAvoidingView,
   Platform,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
-import { CaretLeft, Eye, EyeSlash } from 'phosphor-react-native';
+import { ChevronLeft, Eye, EyeOff } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/RootStack';
-import { useAuthStore } from '../../store/authStore';
-
-const ACCENT = '#c9a227';
+import { useThemeColors } from '../../theme/useThemeColors';
+import { supabase } from '../../lib/supabase';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'SignIn'>;
@@ -22,19 +23,42 @@ type Props = {
 
 export default function SignInScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const setAuthComplete = useAuthStore((s) => s.setAuthComplete);
+  const colors = useThemeColors();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [hidePassword, setHidePassword] = useState(true);
+  const [loading, setLoading] = useState(false);
 
-  const handleSignIn = () => {
-    setAuthComplete();
-    navigation.replace('Main');
+  const handleSignIn = async () => {
+    if (!email.trim() || !password) {
+      Alert.alert('Error', 'Please enter email and password');
+      return;
+    }
+    setLoading(true);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    setLoading(false);
+    if (error) {
+      Alert.alert('Sign In Failed', error.message);
+      return;
+    }
+    if (data.session) {
+      navigation.replace('Main');
+    }
   };
 
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
+      style={[
+        styles.container,
+        {
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+          backgroundColor: colors.background.bgWhite,
+        },
+      ]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}
     >
@@ -43,19 +67,28 @@ export default function SignInScreen({ navigation }: Props) {
         onPress={() => navigation.goBack()}
         hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
       >
-        <CaretLeft size={28} color="#000" weight="regular" />
+        <ChevronLeft size={24} color={colors.text.textBase} strokeWidth={2.5} />
       </TouchableOpacity>
 
       <View style={styles.content}>
-        <Text style={styles.title}>Sign In</Text>
-        <Text style={styles.subtitle}>Enter your registered email</Text>
+        <Text style={[styles.title, { color: colors.text.textBase }]}>Sign In</Text>
+        <Text style={[styles.subtitle, { color: colors.text.textTertiary }]}>
+          Enter your registered email
+        </Text>
 
         <View style={styles.field}>
-          <Text style={styles.label}>Email</Text>
+          <Text style={[styles.label, { color: colors.text.textBaseTint }]}>Email</Text>
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              {
+                backgroundColor: colors.surface.onBgAlt,
+                color: colors.text.textBase,
+                borderColor: colors.border.border3,
+              },
+            ]}
             placeholder="ex: example@gmail.com"
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.text.textTertiary}
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
@@ -65,12 +98,20 @@ export default function SignInScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.field}>
-          <Text style={styles.label}>Password</Text>
+          <Text style={[styles.label, { color: colors.text.textBaseTint }]}>Password</Text>
           <View style={styles.passwordRow}>
             <TextInput
-              style={[styles.input, styles.passwordInput]}
+              style={[
+                styles.input,
+                styles.passwordInput,
+                {
+                  backgroundColor: colors.surface.onBgAlt,
+                  color: colors.text.textBase,
+                  borderColor: colors.border.border3,
+                },
+              ]}
               placeholder="Enter password"
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.text.textTertiary}
               value={password}
               onChangeText={setPassword}
               secureTextEntry={hidePassword}
@@ -80,28 +121,41 @@ export default function SignInScreen({ navigation }: Props) {
               onPress={() => setHidePassword((v) => !v)}
             >
               {hidePassword ? (
-                <EyeSlash size={22} color="#666" weight="regular" />
+                <EyeOff size={22} color={colors.text.textTertiary} />
               ) : (
-                <Eye size={22} color="#666" weight="regular" />
+                <Eye size={22} color={colors.text.textAlt} />
               )}
             </TouchableOpacity>
           </View>
         </View>
 
         <TouchableOpacity style={styles.forgotBtn}>
-          <Text style={styles.forgotText}>Forgot password?</Text>
+          <Text style={[styles.forgotText, { color: colors.text.textBrand }]}>
+            Forgot password?
+          </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.primaryBtn} onPress={handleSignIn} activeOpacity={0.8}>
-          <Text style={styles.primaryBtnText}>Sign In</Text>
+        <TouchableOpacity
+          style={[styles.primaryBtn, { backgroundColor: colors.background.bgInverse }]}
+          onPress={handleSignIn}
+          disabled={loading}
+          activeOpacity={0.8}
+        >
+          {loading ? (
+            <ActivityIndicator color={colors.text.textWhite} />
+          ) : (
+            <Text style={[styles.primaryBtnText, { color: colors.text.textWhite }]}>Sign In</Text>
+          )}
         </TouchableOpacity>
+      </View>
 
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Don't have an account? </Text>
-          <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
-            <Text style={styles.footerLink}>Sign Up</Text>
-          </TouchableOpacity>
-        </View>
+      <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
+        <Text style={[styles.footerText, { color: colors.text.textTertiary }]}>
+          Don't have an account?{' '}
+        </Text>
+        <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
+          <Text style={[styles.footerLink, { color: colors.text.textBrand }]}>Sign Up</Text>
+        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
@@ -110,12 +164,11 @@ export default function SignInScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
   },
   backBtn: {
     position: 'absolute',
-    left: 24,
+    left: 20,
     zIndex: 1,
   },
   content: {
@@ -125,13 +178,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#000',
     marginBottom: 8,
+    marginTop: 60,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 15,
-    color: '#666',
     marginBottom: 32,
     textAlign: 'center',
   },
@@ -139,20 +191,17 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   label: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '500',
-    color: '#333',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#f5f5f0',
     borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 16,
     fontSize: 16,
-    color: '#000',
+    height: 52,
     borderWidth: 1,
-    borderColor: '#e8e8e2',
   },
   passwordRow: {
     position: 'relative',
@@ -172,21 +221,19 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   forgotText: {
-    fontSize: 14,
-    color: ACCENT,
+    fontSize: 15,
     fontWeight: '500',
   },
   primaryBtn: {
-    backgroundColor: '#000',
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 16,
+    height: 56,
     alignItems: 'center',
     marginBottom: 24,
   },
   primaryBtnText: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#fff',
   },
   footer: {
     flexDirection: 'row',
@@ -195,11 +242,9 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 15,
-    color: '#666',
   },
   footerLink: {
     fontSize: 15,
-    color: ACCENT,
     fontWeight: '600',
   },
 });

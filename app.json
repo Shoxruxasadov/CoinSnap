@@ -2,6 +2,7 @@
   "expo": {
     "name": "CoinSnap",
     "slug": "coinsnap",
+    "scheme": "coinsnap",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -16,6 +17,7 @@
       "bundleIdentifier": "com.webnum.coinsnap",
       "appleTeamId": "2J688D34T8",
       "buildNumber": "2",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -34,6 +36,9 @@
         "projectId": "0ba9e547-b9fd-4d0c-89dd-0f0277c5b3ce"
       }
     },
-    "owner": "webnum.com"
+    "owner": "webnum.com",
+    "plugins": [
+      "expo-web-browser"
+    ]
   }
 }
