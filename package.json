@@ -9,7 +9,6 @@
     "dev": "npx expo start",
     "dev:ios": "CI=false npx expo run:ios",
     "increment": "node scripts/increment.js",
-    "seed:blog": "node scripts/seed-blog.js",
     "seed:blog:sql": "node scripts/seed-blog.js --sql",
     "build:ios:local": "npm run increment && npx eas build --platform ios --local",
     "build:android:local": "npm run increment && npx eas build --platform android --local"
@@ -35,6 +34,7 @@
     "expo-auth-session": "^55.0.6",
     "expo-blur": "^55.0.8",
     "expo-camera": "~55.0.9",
+    "expo-constants": "^55.0.7",
     "expo-device": "^55.0.9",
     "expo-file-system": "^55.0.10",
     "expo-font": "^55.0.4",

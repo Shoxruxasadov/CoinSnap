@@ -524,9 +524,9 @@ export default function CommunityPostScreen() {
           disabled={!replyText.trim() || sending}
         >
           {sending ? (
-            <ActivityIndicator size="small" color={colors.text.textWhite} />
+            <ActivityIndicator size="small" color={colors.text.textInverse} />
           ) : (
-            <Send size={20} color={replyText.trim() ? colors.text.textWhite : colors.text.textTertiary} />
+            <Send size={20} color={replyText.trim() ? colors.text.textInverse : colors.text.textTertiary} />
           )}
         </TouchableOpacity>
       </View>

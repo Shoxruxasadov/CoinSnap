@@ -11,6 +11,12 @@ import CommunityReplyScreen from '../screens/CommunityReplyScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
 import ScannerScreen from '../screens/ScannerScreen';
 import ScanResultScreen from '../screens/ScanResultScreen';
+import ProScreen from '../screens/ProScreen';
+import AchievementsScreen from '../screens/profile/AchievementsScreen';
+import CurrencyScreen from '../screens/profile/CurrencyScreen';
+import FeatureRequestScreen from '../screens/profile/FeatureRequestScreen';
+import SendIdeaScreen from '../screens/profile/SendIdeaScreen';
+import AboutAppScreen from '../screens/profile/AboutAppScreen';
 import type { BlogPost } from '../types/blog';
 import type { CollectionRow } from '../screens/tabs/CollectionsScreen';
 import type { CommunityPost } from '../types/community';
@@ -27,6 +33,12 @@ export type MainStackParamList = {
   EditProfile: undefined;
   ScannerScreen: undefined;
   ScanResult: { coin: any };
+  Pro: undefined;
+  Achievements: undefined;
+  Currency: undefined;
+  FeatureRequest: undefined;
+  SendIdea: undefined;
+  AboutApp: undefined;
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -52,6 +64,12 @@ export default function MainStack() {
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="ScannerScreen" component={ScannerScreen} />
       <Stack.Screen name="ScanResult" component={ScanResultScreen} />
+      <Stack.Screen name="Pro" component={ProScreen} />
+      <Stack.Screen name="Achievements" component={AchievementsScreen} />
+      <Stack.Screen name="Currency" component={CurrencyScreen} />
+      <Stack.Screen name="FeatureRequest" component={FeatureRequestScreen} />
+      <Stack.Screen name="SendIdea" component={SendIdeaScreen} />
+      <Stack.Screen name="AboutApp" component={AboutAppScreen} />
     </Stack.Navigator>
   );
 }

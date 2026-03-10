@@ -36,6 +36,17 @@ Important rules:
 - If you cannot determine a field, use null
 - Do NOT wrap the JSON in markdown code blocks`;
 
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 2048;
+  const parts: string[] = [];
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+    parts.push(String.fromCharCode.apply(null, Array.from(chunk)));
+  }
+  return btoa(parts.join(""));
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", {
@@ -77,8 +88,8 @@ Deno.serve(async (req: Request) => {
     const frontBuffer = await frontRes.arrayBuffer();
     const backBuffer = await backRes.arrayBuffer();
 
-    const frontBase64 = btoa(String.fromCharCode(...new Uint8Array(frontBuffer)));
-    const backBase64 = btoa(String.fromCharCode(...new Uint8Array(backBuffer)));
+    const frontBase64 = arrayBufferToBase64(frontBuffer);
+    const backBase64 = arrayBufferToBase64(backBuffer);
 
     const frontMime = frontRes.headers.get("content-type") || "image/jpeg";
     const backMime = backRes.headers.get("content-type") || "image/jpeg";

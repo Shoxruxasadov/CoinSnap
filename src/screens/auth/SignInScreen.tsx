@@ -142,7 +142,7 @@ export default function SignInScreen({ navigation }: Props) {
           activeOpacity={0.8}
         >
           {loading ? (
-            <ActivityIndicator color={colors.text.textWhite} />
+            <ActivityIndicator color={colors.text.textInverse} />
           ) : (
             <Text style={[styles.primaryBtnText, { color: colors.text.textWhite }]}>Sign In</Text>
           )}

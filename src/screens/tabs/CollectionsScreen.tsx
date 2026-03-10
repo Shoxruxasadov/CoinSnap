@@ -360,7 +360,7 @@ export default function CollectionsScreen() {
                   activeOpacity={0.8}
                 >
                   {creating ? (
-                    <ActivityIndicator size="small" color={colors.text.textWhite} />
+                    <ActivityIndicator size="small" color={colors.text.textInverse} />
                   ) : (
                     <Text style={[styles.modalCreateBtnText, { color: colors.text.textWhite }]}>Create</Text>
                   )}

@@ -25,6 +25,7 @@ import type { MainStackParamList } from '../navigation/MainStack';
 import { supabase } from '../lib/supabase';
 import { useSupabaseSession } from '../lib/useSupabaseSession';
 import { triggerSelection, triggerImpact } from '../lib/haptics';
+import { analyzeCoinInApp } from '../lib/analyzeCoin';
 
 type Nav = NativeStackNavigationProp<MainStackParamList>;
 
@@ -105,7 +106,7 @@ export default function ScannerScreen() {
     );
 
     const minDim = Math.min(width, height);
-    const cropSize = Math.floor(minDim * 0.7);
+    const cropSize = minDim;
     const originX = Math.floor((width - cropSize) / 2);
     const originY = Math.floor((height - cropSize) / 2);
 
@@ -113,9 +114,9 @@ export default function ScannerScreen() {
       uri,
       [
         { crop: { originX, originY, width: cropSize, height: cropSize } },
-        { resize: { width: 512, height: 512 } },
+        { resize: { width: 800, height: 800 } },
       ],
-      { compress: 0.9, format: ImageManipulator.SaveFormat.PNG },
+      { compress: 0.92, format: ImageManipulator.SaveFormat.JPEG },
     );
 
     return result.uri;
@@ -124,8 +125,8 @@ export default function ScannerScreen() {
   const uploadImage = async (uri: string, side: string): Promise<string | null> => {
     try {
       const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
-      const filename = `${userId}/${Date.now()}_${side}.png`;
-      const contentType = 'image/png';
+      const filename = `${userId}/${Date.now()}_${side}.jpg`;
+      const contentType = 'image/jpeg';
 
       const { data, error } = await supabase.storage
         .from('coin-scans')
@@ -231,27 +232,19 @@ export default function ScannerScreen() {
         throw new Error('Failed to upload images');
       }
 
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
-      const token = currentSession?.access_token;
+      const getGeminiKey = async (): Promise<string> => {
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        const token = currentSession?.access_token;
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/get-gemini-key`, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to get API key');
+        return data.key;
+      };
 
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/analyze-coin`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          front_image_url: frontUrl,
-          back_image_url: backUrl,
-          user_id: userId,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Analysis failed');
-      }
+      const data = await analyzeCoinInApp(front, back, frontUrl, backUrl, userId, getGeminiKey);
 
       setProcessing(false);
       navigation.replace('ScanResult', { coin: data.coin });
@@ -295,7 +288,7 @@ export default function ScannerScreen() {
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
         facing="back"
-        flash={flashOn ? 'on' : 'off'}
+        enableTorch={flashOn}
         zoom={zoom}
       />
 
@@ -323,7 +316,7 @@ export default function ScannerScreen() {
           <X size={24} color="#fff" />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.premiumPill} activeOpacity={0.8}>
+        <TouchableOpacity style={styles.premiumPill} activeOpacity={0.8} onPress={() => navigation.navigate('Pro')}>
           <Crown size={16} color="#1a1a1a" fill="#1a1a1a" />
           <Text style={styles.premiumText}>Get unlimited scans</Text>
         </TouchableOpacity>
@@ -466,21 +459,15 @@ export default function ScannerScreen() {
             <View style={styles.snapGuideExamples}>
               <View style={styles.snapGuideExample}>
                 <Image
-                  source={{ uri: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/2e/US_One_Cent_Obv.png/220px-US_One_Cent_Obv.png' }}
+                  source={require('../../assets/home/info1.png')}
                   style={styles.snapGuideImg}
                 />
-                <View style={[styles.snapGuideBadge, { backgroundColor: '#F44336' }]}>
-                  <X size={14} color="#fff" />
-                </View>
               </View>
               <View style={styles.snapGuideExample}>
                 <Image
-                  source={{ uri: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/2e/US_One_Cent_Obv.png/220px-US_One_Cent_Obv.png' }}
+                  source={require('../../assets/home/coin2.png')}
                   style={styles.snapGuideImg}
                 />
-                <View style={[styles.snapGuideBadge, { backgroundColor: '#4CAF50' }]}>
-                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>✓</Text>
-                </View>
               </View>
             </View>
             <TouchableOpacity

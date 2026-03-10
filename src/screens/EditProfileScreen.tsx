@@ -182,7 +182,7 @@ export default function EditProfileScreen() {
   if (loading) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: colors.background.bgAlt }]}>
-        <ActivityIndicator size="large" color={colors.text.textBrand} />
+        <ActivityIndicator size="large" color={colors.text.textBase} />
       </View>
     );
   }
@@ -206,9 +206,9 @@ export default function EditProfileScreen() {
           disabled={saving}
         >
           {saving ? (
-            <ActivityIndicator size="small" color={colors.text.textBrand} />
+            <ActivityIndicator size="small" color={colors.text.textBase} />
           ) : (
-            <Check size={26} color={colors.text.textBrand} strokeWidth={2.5} />
+            <Check size={26} color={colors.text.textBase} strokeWidth={2.5} />
           )}
         </TouchableOpacity>
       </View>

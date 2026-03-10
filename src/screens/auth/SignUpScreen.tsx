@@ -175,7 +175,7 @@ export default function SignUpScreen({ navigation }: Props) {
           activeOpacity={0.8}
         >
           {loading ? (
-            <ActivityIndicator color={colors.text.textWhite} />
+            <ActivityIndicator color={colors.text.textInverse} />
           ) : (
             <Text style={[styles.primaryBtnText, { color: colors.text.textWhite }]}>Sign Up</Text>
           )}

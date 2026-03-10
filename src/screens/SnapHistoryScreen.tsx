@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -6,14 +6,22 @@ import {
   View,
   Image,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { ChevronLeft } from 'lucide-react-native';
+import { ChevronLeft, MoreVertical, FolderPlus, Trash2, Plus, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import type { MainStackParamList } from '../navigation/MainStack';
 import { useThemeColors } from '../theme/useThemeColors';
+import { triggerSelection } from '../lib/haptics';
+
+type Nav = NativeStackNavigationProp<MainStackParamList>;
 import { supabase } from '../lib/supabase';
 import { useSupabaseSession } from '../lib/useSupabaseSession';
+import type { CollectionRow } from './tabs/CollectionsScreen';
 import SearchEmptyIcon from '../../assets/empty/search.svg';
 
 export type ScannedCoinRow = {
@@ -26,6 +34,19 @@ export type ScannedCoinRow = {
   back_image_url: string | null;
   estimated_price_min: number | null;
   estimated_price_max: number | null;
+  mintage: number | null;
+  composition: string | null;
+  grade_label: string | null;
+  grade_value: number | null;
+  denomination: string | null;
+  metal_composition_detailed: string | null;
+  weight_grams: number | null;
+  diameter_mm: number | null;
+  thickness_mm: number | null;
+  edge_type: string | null;
+  designer: string | null;
+  history_description: string | null;
+  ai_opinion: string | null;
   scanned_at: string;
   scanned_by_user_id: string | null;
 };
@@ -54,22 +75,24 @@ const CARD_HEIGHT = 96;
 function CoinRow({
   item,
   colors,
-  onLongPress,
+  onPress,
+  onDotsPress,
 }: {
   item: ScannedCoinRow;
   colors: ReturnType<typeof useThemeColors>;
-  onLongPress: (coin: ScannedCoinRow) => void;
+  onPress: (coin: ScannedCoinRow) => void;
+  onDotsPress: (coin: ScannedCoinRow) => void;
 }) {
   const displayName = [item.name, item.country, item.year_start ?? item.year_end].filter(Boolean).join(' ').trim() || item.name;
-  const priceText = formatPriceRange(item.estimated_price_min, item.estimated_price_max);
   const hasFront = !!item.front_image_url;
   const hasBack = !!item.back_image_url;
 
   return (
     <TouchableOpacity
       style={[styles.coinCard, { backgroundColor: colors.surface.onBgBase }]}
-      activeOpacity={1}
-      onLongPress={() => onLongPress(item)}
+      activeOpacity={0.7}
+      onPress={() => onPress(item)}
+      onLongPress={() => onDotsPress(item)}
     >
       <View style={[styles.coinImagesWrap, { backgroundColor: colors.surface.onBgAlt }]}>
         {hasFront && (
@@ -89,22 +112,18 @@ function CoinRow({
       <View style={styles.coinInfo}>
         <Text
           style={[styles.coinName, { color: colors.text.textBase }]}
-          numberOfLines={1}
+          numberOfLines={2}
           ellipsizeMode="tail"
         >
           {displayName}
         </Text>
-        <View style={styles.coinMetaRow}>
-          <Text style={[styles.coinDate, { color: colors.text.textTertiary }]}>
-            {formatScanDate(item.scanned_at)}
-          </Text>
-          {priceText ? (
-            <Text style={[styles.coinPrice, { color: colors.text.textBrand }]} numberOfLines={1}>
-              {priceText}
-            </Text>
-          ) : null}
-        </View>
+        <Text style={[styles.coinDate, { color: colors.text.textTertiary }]}>
+          {formatScanDate(item.scanned_at)}
+        </Text>
       </View>
+      <TouchableOpacity style={styles.dotsBtn} onPress={() => onDotsPress(item)} hitSlop={8}>
+        <MoreVertical size={20} color={colors.text.textAlt} />
+      </TouchableOpacity>
     </TouchableOpacity>
   );
 }
@@ -112,40 +131,95 @@ function CoinRow({
 export default function SnapHistoryScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
-  const navigation = useNavigation();
+  const navigation = useNavigation<Nav>();
   const { session } = useSupabaseSession();
+  const userId = session?.user?.id;
   const [coins, setCoins] = useState<ScannedCoinRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [collections, setCollections] = useState<CollectionRow[]>([]);
+  const [selectedCoin, setSelectedCoin] = useState<ScannedCoinRow | null>(null);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(null);
 
-  useEffect(() => {
-    if (!session?.user?.id) {
-      setCoins([]);
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
+  const actionSheetRef = useRef<BottomSheet>(null);
+  const addToSheetRef = useRef<BottomSheet>(null);
+  const actionSnapPoints = useMemo(() => [160], []);
+  const addToSnapPoints = useMemo(() => ['55%'], []);
+
+  const coinInCollection = useMemo(() => {
+    if (!selectedCoin) return false;
+    return collections.some((c) => (c.coin_ids || []).includes(selectedCoin.id));
+  }, [selectedCoin, collections]);
+
+  const fetchCoins = useCallback(() => {
+    if (!userId) { setCoins([]); setLoading(false); return; }
     setLoading(true);
     supabase
-      .from('coins')
-      .select('id, name, country, year_start, year_end, front_image_url, back_image_url, estimated_price_min, estimated_price_max, scanned_at, scanned_by_user_id')
-      .eq('scanned_by_user_id', session.user.id)
-      .order('scanned_at', { ascending: false })
+      .from('coins').select('*').eq('scanned_by_user_id', userId).order('scanned_at', { ascending: false })
       .then(({ data, error }) => {
-        if (cancelled) return;
         setLoading(false);
-        if (error) return;
-        setCoins((data as ScannedCoinRow[]) ?? []);
+        if (!error) setCoins((data as ScannedCoinRow[]) ?? []);
       });
-    return () => { cancelled = true; };
-  }, [session?.user?.id]);
+  }, [userId]);
 
-  const handleLongPress = (_coin: ScannedCoinRow) => {
-    // Keyinchalik: Add to Collection va boshqa actionlar
+  const fetchCollections = useCallback(() => {
+    if (!userId) return;
+    supabase.from('collections').select('*').eq('user_id', userId).order('created_at', { ascending: false })
+      .then(({ data }) => { if (data) setCollections(data as CollectionRow[]); });
+  }, [userId]);
+
+  useFocusEffect(useCallback(() => { fetchCoins(); fetchCollections(); }, [fetchCoins, fetchCollections]));
+
+  const handlePress = (coin: ScannedCoinRow) => {
+    navigation.navigate('ScanResult', { coin });
   };
+
+  const handleDotsPress = (coin: ScannedCoinRow) => {
+    triggerSelection();
+    setSelectedCoin(coin);
+    actionSheetRef.current?.expand();
+  };
+
+  const handleOpenAddTo = () => {
+    actionSheetRef.current?.close();
+    setTimeout(() => addToSheetRef.current?.expand(), 200);
+  };
+
+  const handleDeleteCoin = () => {
+    actionSheetRef.current?.close();
+    if (!selectedCoin) return;
+    Alert.alert('Delete Coin', 'Are you sure you want to delete this coin?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          await supabase.from('coins').delete().eq('id', selectedCoin.id);
+          setSelectedCoin(null);
+          fetchCoins();
+        },
+      },
+    ]);
+  };
+
+  const handleConfirmAddTo = async () => {
+    if (!selectedCollectionId || !selectedCoin) return;
+    const col = collections.find((c) => c.id === selectedCollectionId);
+    if (!col) return;
+    const newIds = [...(col.coin_ids || []), selectedCoin.id];
+    await supabase.from('collections').update({ coin_ids: newIds, updated_at: new Date().toISOString() }).eq('id', col.id);
+    addToSheetRef.current?.close();
+    setSelectedCollectionId(null);
+    setSelectedCoin(null);
+    fetchCollections();
+    Alert.alert('Added', `Coin added to "${col.name}"`);
+  };
+
+  const renderBackdrop = useCallback(
+    (props: any) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />, []
+  );
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background.bgBaseElevated }]}>
-      <View style={[styles.header, { borderBottomColor: colors.border.border3 }]}>
+      <View style={[styles.header]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={12}>
           <ChevronLeft size={24} color={colors.text.textBase} strokeWidth={2.5} />
         </TouchableOpacity>
@@ -168,11 +242,79 @@ export default function SnapHistoryScreen() {
         <FlashList
           data={coins}
           keyExtractor={(item) => String(item.id)}
-          renderItem={({ item }) => <CoinRow item={item} colors={colors} onLongPress={handleLongPress} />}
+          renderItem={({ item }) => <CoinRow item={item} colors={colors} onPress={handlePress} onDotsPress={handleDotsPress} />}
           contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 12 }]}
           showsVerticalScrollIndicator={false}
         />
       )}
+
+      {/* Action Bottom Sheet */}
+      <BottomSheet
+        ref={actionSheetRef}
+        index={-1}
+        snapPoints={actionSnapPoints}
+        enablePanDownToClose
+        backdropComponent={renderBackdrop}
+        backgroundStyle={{ backgroundColor: colors.background.bgBase }}
+        handleIndicatorStyle={{ backgroundColor: colors.border.border3, width: 36, height: 4, borderRadius: 2 }}
+      >
+        <BottomSheetView style={actionStyles.container}>
+          {!coinInCollection && (
+            <TouchableOpacity style={actionStyles.row} onPress={handleOpenAddTo}>
+              <FolderPlus size={22} color={colors.text.textBase} />
+              <Text style={[actionStyles.rowText, { color: colors.text.textBase }]}>Add to</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={actionStyles.row} onPress={handleDeleteCoin}>
+            <Trash2 size={22} color="#E53935" />
+            <Text style={[actionStyles.rowText, { color: '#E53935' }]}>Delete</Text>
+          </TouchableOpacity>
+        </BottomSheetView>
+      </BottomSheet>
+
+      {/* Add To Bottom Sheet */}
+      <BottomSheet
+        ref={addToSheetRef}
+        index={-1}
+        snapPoints={addToSnapPoints}
+        enablePanDownToClose
+        backdropComponent={renderBackdrop}
+        backgroundStyle={{ backgroundColor: colors.background.bgBase }}
+        handleIndicatorStyle={{ backgroundColor: colors.border.border3, width: 36, height: 4, borderRadius: 2 }}
+      >
+        <BottomSheetView style={actionStyles.addToContent}>
+          <View style={actionStyles.sheetHeader}>
+            <Text style={[actionStyles.sheetTitle, { color: colors.text.textBase }]}>Add to</Text>
+            <TouchableOpacity onPress={() => addToSheetRef.current?.close()}>
+              <X size={24} color={colors.text.textAlt} />
+            </TouchableOpacity>
+          </View>
+          <BottomSheetScrollView style={{ flex: 1 }}>
+            {collections.map((col) => {
+              const isSelected = selectedCollectionId === col.id;
+              return (
+                <TouchableOpacity
+                  key={col.id}
+                  style={[actionStyles.collectionRow, { borderColor: isSelected ? colors.text.textBrand : colors.border.border3 }, isSelected && { borderWidth: 2 }]}
+                  onPress={() => { triggerSelection(); setSelectedCollectionId(col.id); }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[actionStyles.collectionName, { color: colors.text.textBase }]}>{col.name}</Text>
+                  <Text style={[actionStyles.collectionCount, { color: colors.text.textTertiary }]}>{(col.coin_ids || []).length} items</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </BottomSheetScrollView>
+          <TouchableOpacity
+            style={[actionStyles.confirmBtn, { backgroundColor: selectedCollectionId ? '#1C1C1E' : colors.surface.onBgAlt }]}
+            onPress={handleConfirmAddTo}
+            disabled={!selectedCollectionId}
+            activeOpacity={0.8}
+          >
+            <Text style={[actionStyles.confirmBtnText, { color: selectedCollectionId ? '#fff' : colors.text.textTertiary }]}>Confirm</Text>
+          </TouchableOpacity>
+        </BottomSheetView>
+      </BottomSheet>
     </View>
   );
 }
@@ -187,7 +329,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
   },
   backBtn: {
     padding: 4,
@@ -294,4 +435,22 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     lineHeight: 24,
   },
+  dotsBtn: {
+    padding: 4,
+    marginLeft: 4,
+  },
+});
+
+const actionStyles = StyleSheet.create({
+  container: { paddingHorizontal: 20, paddingTop: 4 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 16 },
+  rowText: { fontSize: 16, fontWeight: '500' },
+  addToContent: { flex: 1, paddingHorizontal: 20 },
+  sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  sheetTitle: { fontSize: 20, fontWeight: '700' },
+  collectionRow: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1, marginBottom: 10 },
+  collectionName: { fontSize: 16, fontWeight: '600' },
+  collectionCount: { fontSize: 13, marginTop: 2 },
+  confirmBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 16, marginBottom: 20 },
+  confirmBtnText: { fontSize: 17, fontWeight: '700' },
 });

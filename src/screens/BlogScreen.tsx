@@ -236,7 +236,7 @@ export default function BlogScreen() {
       >
         {loading ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.surface.onBgBase }]}>
-            <ActivityIndicator size="small" color={colors.text.textBrand} />
+            <ActivityIndicator size="small" color={colors.text.textBase} />
           </View>
         ) : postsForTab.length === 0 ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.surface.onBgBase }]}>

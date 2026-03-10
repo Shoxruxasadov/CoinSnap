@@ -94,16 +94,16 @@ export default function CommunityReplyScreen() {
           disabled={!canSend || sending}
         >
           {sending ? (
-            <ActivityIndicator size="small" color={colors.text.textWhite} />
+            <ActivityIndicator size="small" color={colors.text.textInverse} />
           ) : (
-            <Send size={20} color={canSend ? colors.text.textWhite : colors.text.textTertiary} />
+            <Send size={20} color={canSend ? colors.text.textInverse : colors.text.textTertiary} />
           )}
         </TouchableOpacity>
       </View>
 
       <View style={styles.content}>
         {/* Original Post Preview */}
-        <View style={[styles.originalPost, { borderBottomColor: colors.border.border2 }]}>
+        <View style={[styles.originalPost]}>
           {postAuthorAvatar ? (
             <Image source={{ uri: postAuthorAvatar }} style={styles.originalAvatar} />
           ) : (
@@ -175,7 +175,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     paddingBottom: 20,
-    borderBottomWidth: 1,
     marginBottom: 20,
   },
   originalAvatar: {

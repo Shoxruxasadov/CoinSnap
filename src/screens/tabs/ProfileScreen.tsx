@@ -8,6 +8,8 @@ import {
   Switch,
   Alert,
   Image,
+  Share,
+  Linking,
 } from 'react-native';
 import {
   Trophy,
@@ -27,6 +29,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, CommonActions } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../navigation/MainStack';
+import * as StoreReview from 'expo-store-review';
 import { supabase } from '../../lib/supabase';
 import { useSupabaseSession } from '../../lib/useSupabaseSession';
 import { useAuthStore } from '../../store/authStore';
@@ -128,10 +131,34 @@ export default function ProfileScreen() {
   const resetSkipped = useAuthStore((s) => s.resetSkipped);
   const vibration = useSettingsStore((s) => s.vibration);
   const setVibration = useSettingsStore((s) => s.setVibration);
+  const currency = useSettingsStore((s) => s.currency);
   const [darkMode, setDarkMode] = React.useState(true);
 
   const isLoggedIn = !!session;
   const iconColor = colors.text.textAlt;
+
+  const handleAchievements = () => stackNav?.navigate('Achievements');
+  const handleCurrency = () => stackNav?.navigate('Currency');
+  const handleFeatureRequest = () => stackNav?.navigate('FeatureRequest');
+  const handleAboutApp = () => stackNav?.navigate('AboutApp');
+
+  const handleRateApp = async () => {
+    const isAvailable = await StoreReview.isAvailableAsync();
+    if (isAvailable) {
+      await StoreReview.requestReview();
+    } else {
+      Linking.openURL('https://apps.apple.com/app/coinsnap');
+    }
+  };
+
+  const handleInviteFriends = async () => {
+    try {
+      await Share.share({ message: 'Coin Snap - AI Powered coin scanner!' });
+    } catch {}
+  };
+
+  const handlePrivacyPolicy = () => Linking.openURL('https://example.com/privacy');
+  const handleTermsOfUse = () => Linking.openURL('https://example.com/terms');
 
   const handleLoginPress = () => {
     const root = navigation.getParent();
@@ -196,7 +223,7 @@ export default function ProfileScreen() {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.proBanner, { backgroundColor: colors.background.bgDark}]} activeOpacity={0.9}>
+        <TouchableOpacity style={[styles.proBanner, { backgroundColor: colors.background.bgDark}]} activeOpacity={0.9} onPress={() => stackNav?.navigate('Pro')}>
           <View style={styles.proBannerTexture}>
             <ProCardTexture
               width="100%"
@@ -220,12 +247,12 @@ export default function ProfileScreen() {
 
         <Text style={[styles.sectionHeader, { color: colors.text.textAlt }]}>General</Text>
         <View style={[styles.section, { backgroundColor: colors.background.bgWhite, borderColor: colors.border.border3 }]}>
-          <SettingRow index={0} icon={<Trophy size={ICON_SIZE} color={iconColor} />} label="Achievements" value="5/20" onPress={() => {}} colors={colors} />
+          <SettingRow index={0} icon={<Trophy size={ICON_SIZE} color={iconColor} />} label="Achievements" value="5/20" onPress={handleAchievements} colors={colors} />
         </View>
 
         <Text style={[styles.sectionHeader, { color: colors.text.textAlt }]}>Personalization</Text>
         <View style={[styles.section, { backgroundColor: colors.background.bgWhite, borderColor: colors.border.border3 }]}>
-          <SettingRow index={0} icon={<DollarSign size={ICON_SIZE} color={iconColor} />} label="Currency" value="USD" onPress={() => {}} colors={colors} />
+          <SettingRow index={0} icon={<DollarSign size={ICON_SIZE} color={iconColor} />} label="Currency" value={currency} onPress={handleCurrency} colors={colors} />
           <SettingRow index={1} icon={<Globe size={ICON_SIZE} color={iconColor} />} label="Language" value="English" onPress={() => {}} colors={colors} />
           <SettingToggle index={2} icon={<Moon size={ICON_SIZE} color={iconColor} />} label="Dark Mode" value={darkMode} onValueChange={setDarkMode} colors={colors} />
           <SettingToggle index={3} icon={<Volume2 size={ICON_SIZE} color={iconColor} />} label="Vibration" value={vibration} onValueChange={setVibration} colors={colors} />
@@ -233,16 +260,16 @@ export default function ProfileScreen() {
 
         <Text style={[styles.sectionHeader, { color: colors.text.textAlt }]}>Legal</Text>
         <View style={[styles.section, { backgroundColor: colors.background.bgWhite, borderColor: colors.border.border3 }]}>
-          <SettingRow index={0} icon={<FileText size={ICON_SIZE} color={iconColor} />} label="Privacy Policy" onPress={() => {}} colors={colors} />
-          <SettingRow index={1} icon={<FileText size={ICON_SIZE} color={iconColor} />} label="Terms of Use" onPress={() => {}} colors={colors} />
+          <SettingRow index={0} icon={<FileText size={ICON_SIZE} color={iconColor} />} label="Privacy Policy" onPress={handlePrivacyPolicy} colors={colors} />
+          <SettingRow index={1} icon={<FileText size={ICON_SIZE} color={iconColor} />} label="Terms of Use" onPress={handleTermsOfUse} colors={colors} />
         </View>
 
         <Text style={[styles.sectionHeader, { color: colors.text.textAlt }]}>Other</Text>
         <View style={[styles.section, { backgroundColor: colors.background.bgWhite, borderColor: colors.border.border3 }]}>
-          <SettingRow index={0} icon={<Lightbulb size={ICON_SIZE} color={iconColor} />} label="Feature Request" onPress={() => {}} colors={colors} />
-          <SettingRow index={1} icon={<Star size={ICON_SIZE} color={iconColor} />} label="Rate the App" onPress={() => {}} colors={colors} />
-          <SettingRow index={2} icon={<UserPlus size={ICON_SIZE} color={iconColor} />} label="Invite friends" onPress={() => {}} colors={colors} />
-          <SettingRow index={3} icon={<Info size={ICON_SIZE} color={iconColor} />} label="App Info" onPress={() => {}} colors={colors} />
+          <SettingRow index={0} icon={<Lightbulb size={ICON_SIZE} color={iconColor} />} label="Feature Request" onPress={handleFeatureRequest} colors={colors} />
+          <SettingRow index={1} icon={<Star size={ICON_SIZE} color={iconColor} />} label="Rate the App" onPress={handleRateApp} colors={colors} />
+          <SettingRow index={2} icon={<UserPlus size={ICON_SIZE} color={iconColor} />} label="Invite friends" onPress={handleInviteFriends} colors={colors} />
+          <SettingRow index={3} icon={<Info size={ICON_SIZE} color={iconColor} />} label="App Info" onPress={handleAboutApp} colors={colors} />
           {isLoggedIn && (
             <TouchableOpacity style={[styles.settingRow, {borderTopWidth: 1, borderTopColor: colors.border.border2 }]} onPress={handleLogout}>
               <View style={styles.settingIconWrap}>

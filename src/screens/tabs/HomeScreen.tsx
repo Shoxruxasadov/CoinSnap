@@ -63,7 +63,7 @@ export default function HomeScreen() {
           </View>
         </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity style={[styles.proBtn, { backgroundColor: "#FFB900" }]}>
+          <TouchableOpacity style={[styles.proBtn, { backgroundColor: "#FFB900" }]} onPress={() => stackNav?.navigate('Pro')}>
             <Crown size={19} color="#2E1B03" fill="#2E1B03" />
             <Text style={[styles.proText, { color: "#2E1B03" }]}>PRO</Text>
           </TouchableOpacity>
@@ -89,7 +89,7 @@ export default function HomeScreen() {
           <Text style={[styles.cardSubtitle, { color: colors.text.textTertiary }]}>
             Tap to scan button below and start{'\n'}scanning.
           </Text>
-          <TouchableOpacity style={[styles.identifyBtn, { backgroundColor: colors.background.bgInverse }]} activeOpacity={0.8}>
+          <TouchableOpacity style={[styles.identifyBtn, { backgroundColor: colors.background.bgInverse }]} activeOpacity={0.8} onPress={() => stackNav?.navigate('ScannerScreen')}>
             <Camera size={24} color={colors.text.textInverse} />
             <Text style={[styles.identifyText, { color: colors.text.textInverse }]}>Identify Now</Text>
           </TouchableOpacity>
@@ -116,7 +116,7 @@ export default function HomeScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.blogScroll} contentContainerStyle={styles.blogScrollContent}>
             {blogLoading ? (
               <View style={[styles.blogCard, styles.blogCardLoading, { backgroundColor: colors.surface.onBgBase }]}>
-                <ActivityIndicator size="small" color={colors.text.textBrand} />
+                <ActivityIndicator size="small" color={colors.text.textBase} />
               </View>
             ) : blogPosts.length === 0 ? (
               <View style={[styles.blogCard, { backgroundColor: colors.surface.onBgBase }]}>

@@ -423,7 +423,7 @@ export default function CommunityScreen() {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.text.textBrand} />
+          <ActivityIndicator size="large" color={colors.text.textBase} />
         </View>
       ) : (
         <ScrollView

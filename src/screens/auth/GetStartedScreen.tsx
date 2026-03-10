@@ -129,7 +129,7 @@ export default function GetStartedScreen({ navigation }: Props) {
             activeOpacity={0.8}
           >
             {loading === "apple" ? (
-              <ActivityIndicator color={colors.text.textWhite} />
+              <ActivityIndicator color={colors.text.textBase} />
             ) : (
               <>
                 <Ionicons
