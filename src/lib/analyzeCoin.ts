@@ -1,7 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from './supabase';
 
-const GEMINI_MODEL = 'gemini-2.5-pro';
+const GEMINI_MODELS = ['gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-pro'];
 
 const COIN_ANALYSIS_PROMPT = `You are an expert numismatist and coin grading specialist. Analyze the provided coin images (obverse/front and reverse/back) and return a detailed JSON object.
 
@@ -64,8 +64,6 @@ async function callGemini(
   frontBase64: string,
   backBase64: string
 ): Promise<CoinAnalysisResult> {
-  const url = `https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-
   const body = {
     contents: [
       {
@@ -94,26 +92,36 @@ async function callGemini(
     },
   };
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  let lastError: Error | null = null;
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Gemini API error: ${text}`);
+  for (const model of GEMINI_MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        if (rawText) {
+          const cleaned = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+          return JSON.parse(cleaned) as CoinAnalysisResult;
+        }
+      }
+
+      const text = await res.text();
+      lastError = new Error(`Gemini API error (${model}): ${text}`);
+    } catch (e: any) {
+      lastError = e;
+    }
   }
 
-  const data = await res.json();
-  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-  if (!rawText) {
-    throw new Error('No response from Gemini');
-  }
-
-  const cleaned = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-  return JSON.parse(cleaned) as CoinAnalysisResult;
+  throw lastError || new Error('All Gemini models failed');
 }
 
 export async function analyzeCoinInApp(

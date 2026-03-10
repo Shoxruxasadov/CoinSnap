@@ -20,6 +20,7 @@ import {
   Platform,
   LayoutChangeEvent,
 } from "react-native";
+import Animated from "react-native-reanimated";
 import {
   ChevronLeft,
   MoreHorizontal,
@@ -462,10 +463,11 @@ export default function ScanResultScreen() {
                   { backgroundColor: colors.surface.surfaceElevatedExtra },
                 ]}
               >
-                <Image
+                <Animated.Image
                   source={{ uri: coin.front_image_url }}
                   style={styles.coinImage}
                   resizeMode="contain"
+                  sharedTransitionTag={`coin-front-${coin.id}`}
                 />
               </View>
             )}
@@ -476,10 +478,11 @@ export default function ScanResultScreen() {
                   { backgroundColor: colors.surface.surfaceElevatedExtra },
                 ]}
               >
-                <Image
+                <Animated.Image
                   source={{ uri: coin.back_image_url }}
                   style={styles.coinImage}
                   resizeMode="contain"
+                  sharedTransitionTag={`coin-back-${coin.id}`}
                 />
               </View>
             )}
@@ -548,7 +551,7 @@ export default function ScanResultScreen() {
           style={[
             styles.tabsRow,
             {
-              backgroundColor: colors.background.bgBase,
+              backgroundColor: colors.background.bgBaseElevated,
               borderBottomColor: colors.border.border3,
             },
           ]}
@@ -802,11 +805,11 @@ export default function ScanResultScreen() {
       <BottomSheet
         ref={moreSheetRef}
         index={-1}
-        snapPoints={["35%"]}
+        snapPoints={[220]}
         enablePanDownToClose
         backdropComponent={renderBackdrop}
         backgroundStyle={{ backgroundColor: colors.background.bgBase }}
-        handleIndicatorStyle={{ backgroundColor: colors.border.border3 }}
+        handleIndicatorStyle={{ backgroundColor: colors.border.border3, width: 36, height: 4, borderRadius: 2 }}
       >
         <BottomSheetView style={sheetStyles.container}>
           <TouchableOpacity style={sheetStyles.row} onPress={openAddToSheet}>
@@ -829,22 +832,6 @@ export default function ScanResultScreen() {
             <Trash2 size={22} color="#E53935" />
             <Text style={[sheetStyles.rowText, { color: "#E53935" }]}>
               Delete
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              sheetStyles.closeBtn,
-              { borderColor: colors.border.border3 },
-            ]}
-            onPress={closeMoreSheet}
-          >
-            <Text
-              style={[
-                sheetStyles.closeBtnText,
-                { color: colors.text.textBase },
-              ]}
-            >
-              Close
             </Text>
           </TouchableOpacity>
         </BottomSheetView>
@@ -1355,14 +1342,6 @@ const sheetStyles = StyleSheet.create({
     paddingVertical: 14,
   },
   rowText: { fontSize: 16, fontWeight: "500" },
-  closeBtn: {
-    marginTop: 16,
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: "center",
-  },
-  closeBtnText: { fontSize: 17, fontWeight: "600" },
   collectionRow: {
     flexDirection: "row",
     justifyContent: "space-between",

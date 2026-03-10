@@ -17,6 +17,7 @@ import CurrencyScreen from '../screens/profile/CurrencyScreen';
 import FeatureRequestScreen from '../screens/profile/FeatureRequestScreen';
 import SendIdeaScreen from '../screens/profile/SendIdeaScreen';
 import AboutAppScreen from '../screens/profile/AboutAppScreen';
+import AssistantScreen from '../screens/AssistantScreen';
 import type { BlogPost } from '../types/blog';
 import type { CollectionRow } from '../screens/tabs/CollectionsScreen';
 import type { CommunityPost } from '../types/community';
@@ -39,6 +40,7 @@ export type MainStackParamList = {
   FeatureRequest: undefined;
   SendIdea: undefined;
   AboutApp: undefined;
+  Assistant: undefined;
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -70,6 +72,7 @@ export default function MainStack() {
       <Stack.Screen name="FeatureRequest" component={FeatureRequestScreen} />
       <Stack.Screen name="SendIdea" component={SendIdeaScreen} />
       <Stack.Screen name="AboutApp" component={AboutAppScreen} />
+      <Stack.Screen name="Assistant" component={AssistantScreen} />
     </Stack.Navigator>
   );
 }

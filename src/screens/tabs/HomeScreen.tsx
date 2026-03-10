@@ -96,7 +96,10 @@ export default function HomeScreen() {
         </View>
 
         {/* Meet Coin Expert Card */}
-        <View style={[styles.expertCard, { backgroundColor: colors.surface.onBgBase }]}>
+        <Pressable
+          style={[styles.expertCard, { backgroundColor: colors.surface.onBgBase }]}
+          onPress={() => stackNav?.navigate('Assistant')}
+        >
           <View style={styles.expertContent}>
             <Text style={[styles.expertTitle, { color: colors.text.textBase }]}>Meet Coin expert</Text>
             <Text style={[styles.expertDescription, { color: colors.text.textAlt }]}>
@@ -108,7 +111,7 @@ export default function HomeScreen() {
             style={styles.expertImage}
             resizeMode="contain"
           />
-        </View>
+        </Pressable>
 
         {/* Collectors Blog */}
         <View style={styles.blogSection}>

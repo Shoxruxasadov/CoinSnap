@@ -26,6 +26,7 @@ import { supabase } from '../lib/supabase';
 import { useSupabaseSession } from '../lib/useSupabaseSession';
 import { triggerSelection, triggerImpact } from '../lib/haptics';
 import { analyzeCoinInApp } from '../lib/analyzeCoin';
+import { processCoinImage } from '../lib/processCoinImage';
 
 type Nav = NativeStackNavigationProp<MainStackParamList>;
 
@@ -34,9 +35,10 @@ const CIRCLE_SIZE = SCREEN_WIDTH * 0.65;
 const SUPABASE_URL = 'https://lkkneoqzxgtqihpjrmbp.supabase.co';
 
 const ANALYSIS_STEPS = [
-  { percent: 20, label: 'Analyzing coin', seconds: 10 },
-  { percent: 45, label: 'Extracting details', seconds: 10 },
-  { percent: 65, label: 'Identifying metal type', seconds: 10 },
+  { percent: 15, label: 'Processing images', seconds: 5 },
+  { percent: 30, label: 'Removing background', seconds: 8 },
+  { percent: 50, label: 'Analyzing coin', seconds: 10 },
+  { percent: 70, label: 'Extracting details', seconds: 10 },
   { percent: 85, label: 'Generating report', seconds: 5 },
   { percent: 100, label: 'Almost done', seconds: 3 },
 ];
@@ -95,6 +97,7 @@ export default function ScannerScreen() {
   };
 
   const processImage = async (uri: string): Promise<string> => {
+    // Step 1: First crop to square and resize
     const { width, height } = await new Promise<{ width: number; height: number }>(
       (resolve, reject) => {
         Image.getSize(
@@ -110,7 +113,7 @@ export default function ScannerScreen() {
     const originX = Math.floor((width - cropSize) / 2);
     const originY = Math.floor((height - cropSize) / 2);
 
-    const result = await ImageManipulator.manipulateAsync(
+    const cropped = await ImageManipulator.manipulateAsync(
       uri,
       [
         { crop: { originX, originY, width: cropSize, height: cropSize } },
@@ -119,7 +122,14 @@ export default function ScannerScreen() {
       { compress: 0.92, format: ImageManipulator.SaveFormat.JPEG },
     );
 
-    return result.uri;
+    // Step 2: Process image (background removal + standardization)
+    try {
+      const { processedUri } = await processCoinImage(cropped.uri);
+      return processedUri;
+    } catch (err) {
+      console.warn('Image processing failed, using cropped image:', err);
+      return cropped.uri;
+    }
   };
 
   const uploadImage = async (uri: string, side: string): Promise<string | null> => {
@@ -296,7 +306,13 @@ export default function ScannerScreen() {
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         <View style={styles.overlayTop} />
         <View style={styles.overlayMiddle}>
-          <View style={styles.overlaySide} />
+          {/* Left side with curved corners */}
+          <View style={styles.overlaySideContainer}>
+            <View style={styles.overlaySideFill} />
+            <View style={[styles.curveCorner, styles.curveTopRight]} />
+            <View style={[styles.curveCorner, styles.curveBottomRight]} />
+          </View>
+          {/* Circle cutout */}
           <View style={styles.circleHole}>
             <View
               style={[
@@ -305,7 +321,12 @@ export default function ScannerScreen() {
               ]}
             />
           </View>
-          <View style={styles.overlaySide} />
+          {/* Right side with curved corners */}
+          <View style={styles.overlaySideContainer}>
+            <View style={styles.overlaySideFill} />
+            <View style={[styles.curveCorner, styles.curveTopLeft]} />
+            <View style={[styles.curveCorner, styles.curveBottomLeft]} />
+          </View>
         </View>
         <View style={styles.overlayBottom} />
       </View>
@@ -587,9 +608,46 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     height: CIRCLE_SIZE,
   },
-  overlaySide: {
+  overlaySideContainer: {
     flex: 1,
+    position: 'relative',
+  },
+  overlaySideFill: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: CIRCLE_SIZE / 2,
     backgroundColor: OVERLAY_COLOR,
+  },
+  curveCorner: {
+    position: 'absolute',
+    width: CIRCLE_SIZE / 2,
+    height: CIRCLE_SIZE / 2,
+  },
+  curveTopRight: {
+    top: 0,
+    right: 0,
+    backgroundColor: OVERLAY_COLOR,
+    borderBottomLeftRadius: CIRCLE_SIZE / 2,
+  },
+  curveBottomRight: {
+    bottom: 0,
+    right: 0,
+    backgroundColor: OVERLAY_COLOR,
+    borderTopLeftRadius: CIRCLE_SIZE / 2,
+  },
+  curveTopLeft: {
+    top: 0,
+    left: 0,
+    backgroundColor: OVERLAY_COLOR,
+    borderBottomRightRadius: CIRCLE_SIZE / 2,
+  },
+  curveBottomLeft: {
+    bottom: 0,
+    left: 0,
+    backgroundColor: OVERLAY_COLOR,
+    borderTopRightRadius: CIRCLE_SIZE / 2,
   },
   circleHole: {
     width: CIRCLE_SIZE,
