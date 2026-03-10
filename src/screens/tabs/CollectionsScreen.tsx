@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -13,10 +13,11 @@ import {
   Platform,
   Image,
   Pressable,
+  RefreshControl,
 } from 'react-native';
 import { LayoutGrid, List, Plus, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { useThemeColors } from '../../theme/useThemeColors';
@@ -130,6 +131,7 @@ export default function CollectionsScreen() {
   const [collections, setCollections] = useState<CollectionRow[]>([]);
   const [coinsMap, setCoinsMap] = useState<Record<number, CoinImageRow>>({});
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [collectionName, setCollectionName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -139,40 +141,43 @@ export default function CollectionsScreen() {
     stackNav?.navigate('CollectionDetail', { collection: c });
   };
 
-  const fetchCollections = () => {
-    if (!session?.user?.id) return;
-    supabase
-      .from('collections')
-      .select('id, name, description, coin_ids, user_id, created_at, updated_at')
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: true })
-      .then(({ data, error }) => {
-        if (error) return;
-        setCollections((data as CollectionRow[]) ?? []);
-      });
-  };
-
-  useEffect(() => {
+  const fetchCollections = useCallback(async (showLoading = false) => {
     if (!session?.user?.id) {
       setCollections([]);
       setCoinsMap({});
       setLoading(false);
       return;
     }
-    let cancelled = false;
-    setLoading(true);
-    supabase
+    
+    if (showLoading) setLoading(true);
+    
+    const { data, error } = await supabase
       .from('collections')
       .select('id, name, description, coin_ids, user_id, created_at, updated_at')
       .eq('user_id', session.user.id)
-      .order('created_at', { ascending: true })
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        setLoading(false);
-        if (error) return;
-        setCollections((data as CollectionRow[]) ?? []);
-      });
-    return () => { cancelled = true; };
+      .order('created_at', { ascending: true });
+    
+    setLoading(false);
+    setRefreshing(false);
+    
+    if (!error) {
+      setCollections((data as CollectionRow[]) ?? []);
+    }
+  }, [session?.user?.id]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchCollections(false);
+  }, [fetchCollections]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchCollections(collections.length === 0);
+    }, [fetchCollections])
+  );
+
+  useEffect(() => {
+    fetchCollections(true);
   }, [session?.user?.id]);
 
   const allCoinIds = useMemo(() => {
@@ -270,6 +275,13 @@ export default function CollectionsScreen() {
           style={styles.scroll}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom }]}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.text.textBase}
+            />
+          }
         >
           {isGrid ? (
             <View style={styles.grid}>
@@ -303,9 +315,9 @@ export default function CollectionsScreen() {
                   onPress={() => openCollectionDetail(c)}
                 />
               ))}
-              <TouchableOpacity style={[styles.newFolderList, { borderColor: colors.border.border3 }]} onPress={openModal} activeOpacity={0.8}>
-                <Plus size={36} color={colors.text.textTertiary} style={styles.newFolderPlus} />
-                <Text style={[styles.newFolderTitle, { color: colors.text.textTertiary }]}>New Folder</Text>
+              <TouchableOpacity style={[styles.newFolderList, { borderColor: colors.border.borderBrandTint }]} onPress={openModal} activeOpacity={0.8}>
+              <Plus size={36} color={colors.text.textTertiary} style={styles.newFolderPlus} />
+                <Text style={[styles.newFolderTitle, { color: colors.text.textBaseTint }]}>New Folder</Text>
                 <Text style={[styles.newFolderHint, { color: colors.text.textTertiary }]}>Tap to create new</Text>
               </TouchableOpacity>
             </View>
@@ -500,7 +512,7 @@ const styles = StyleSheet.create({
     padding: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 120,
+    height: 116,
   },
   newFolderPlus: {
     marginBottom: 8,

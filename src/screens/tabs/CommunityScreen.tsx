@@ -431,7 +431,7 @@ export default function CommunityScreen() {
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.text.textBrand} />
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.text.textBase} />
           }
         >
           {posts.length === 0 ? (

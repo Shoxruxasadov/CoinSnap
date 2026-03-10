@@ -520,7 +520,6 @@ export default function CollectionDetailScreen() {
             onChangeText={setEditName}
             placeholder="Collection name"
             placeholderTextColor={colors.text.textTertiary}
-            autoFocus
           />
           <TouchableOpacity
             style={[sheetStyles.saveBtn, { backgroundColor: editName.trim() ? '#1C1C1E' : colors.surface.onBgAlt }]}

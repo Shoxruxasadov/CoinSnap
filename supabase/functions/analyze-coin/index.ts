@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const GEMINI_MODEL = "gemini-2.5-pro";
+const GEMINI_MODELS = ["gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-pro"];
 
 const COIN_ANALYSIS_PROMPT = `You are an expert numismatist and coin grading specialist. Analyze the provided coin images (obverse/front and reverse/back) and return a detailed JSON object.
 
@@ -36,6 +36,14 @@ Important rules:
 - If you cannot determine a field, use null
 - Do NOT wrap the JSON in markdown code blocks`;
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Content-Type": "application/json",
+};
+
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   const chunkSize = 2048;
@@ -49,13 +57,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-      },
-    });
+    return new Response("ok", { headers: CORS_HEADERS });
   }
 
   try {
@@ -63,8 +65,11 @@ Deno.serve(async (req: Request) => {
 
     if (!front_image_url || !back_image_url || !user_id) {
       return new Response(
-        JSON.stringify({ error: "front_image_url, back_image_url, and user_id are required" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({
+          error:
+            "front_image_url, back_image_url, and user_id are required",
+        }),
+        { status: 400, headers: CORS_HEADERS }
       );
     }
 
@@ -72,7 +77,7 @@ Deno.serve(async (req: Request) => {
     if (!geminiApiKey) {
       return new Response(
         JSON.stringify({ error: "GEMINI_API_KEY not configured" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
+        { status: 500, headers: CORS_HEADERS }
       );
     }
 
@@ -85,6 +90,13 @@ Deno.serve(async (req: Request) => {
       fetch(back_image_url),
     ]);
 
+    if (!frontRes.ok || !backRes.ok) {
+      return new Response(
+        JSON.stringify({ error: "Failed to download coin images" }),
+        { status: 502, headers: CORS_HEADERS }
+      );
+    }
+
     const frontBuffer = await frontRes.arrayBuffer();
     const backBuffer = await backRes.arrayBuffer();
 
@@ -94,26 +106,14 @@ Deno.serve(async (req: Request) => {
     const frontMime = frontRes.headers.get("content-type") || "image/jpeg";
     const backMime = backRes.headers.get("content-type") || "image/jpeg";
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL}:generateContent?key=${geminiApiKey}`;
-
     const geminiBody = {
       contents: [
         {
           parts: [
             { text: COIN_ANALYSIS_PROMPT },
-            {
-              inline_data: {
-                mime_type: frontMime,
-                data: frontBase64,
-              },
-            },
+            { inline_data: { mime_type: frontMime, data: frontBase64 } },
             { text: "This is the OBVERSE (front) side of the coin." },
-            {
-              inline_data: {
-                mime_type: backMime,
-                data: backBase64,
-              },
-            },
+            { inline_data: { mime_type: backMime, data: backBase64 } },
             { text: "This is the REVERSE (back) side of the coin." },
           ],
         },
@@ -121,44 +121,66 @@ Deno.serve(async (req: Request) => {
       generationConfig: {
         temperature: 0.2,
         maxOutputTokens: 4096,
-        responseMimeType: "application/json",
       },
     };
 
-    const geminiResponse = await fetch(geminiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(geminiBody),
-    });
+    let rawText: string | null = null;
+    let lastError: string | null = null;
 
-    if (!geminiResponse.ok) {
-      const errText = await geminiResponse.text();
-      console.error("Gemini API error:", errText);
-      return new Response(
-        JSON.stringify({ error: "Gemini API error", details: errText }),
-        { status: 502, headers: { "Content-Type": "application/json" } }
-      );
+    for (const model of GEMINI_MODELS) {
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`;
+
+      try {
+        const geminiResponse = await fetch(geminiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(geminiBody),
+        });
+
+        if (geminiResponse.ok) {
+          const geminiData = await geminiResponse.json();
+          const text =
+            geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) {
+            rawText = text;
+            break;
+          }
+        }
+
+        const errText = await geminiResponse.text();
+        console.error(`Gemini ${model} error:`, errText);
+        lastError = errText;
+      } catch (e) {
+        console.error(`Gemini ${model} exception:`, e);
+        lastError = String(e);
+      }
     }
-
-    const geminiData = await geminiResponse.json();
-    const rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!rawText) {
       return new Response(
-        JSON.stringify({ error: "No response from Gemini" }),
-        { status: 502, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({
+          error: "All Gemini models failed",
+          details: lastError,
+        }),
+        { status: 502, headers: CORS_HEADERS }
       );
     }
 
     let coinData: Record<string, unknown>;
     try {
-      const cleaned = rawText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const cleaned = rawText
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
       coinData = JSON.parse(cleaned);
     } catch {
       console.error("Failed to parse Gemini response:", rawText);
       return new Response(
-        JSON.stringify({ error: "Failed to parse AI response", raw: rawText }),
-        { status: 502, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({
+          error: "Failed to parse AI response",
+          raw: rawText,
+        }),
+        { status: 502, headers: CORS_HEADERS }
       );
     }
 
@@ -178,7 +200,8 @@ Deno.serve(async (req: Request) => {
         grade_label: coinData.grade_label ?? null,
         grade_value: coinData.grade_value ?? null,
         denomination: coinData.denomination ?? null,
-        metal_composition_detailed: coinData.metal_composition_detailed ?? null,
+        metal_composition_detailed:
+          coinData.metal_composition_detailed ?? null,
         weight_grams: coinData.weight_grams ?? null,
         diameter_mm: coinData.diameter_mm ?? null,
         thickness_mm: coinData.thickness_mm ?? null,
@@ -195,23 +218,26 @@ Deno.serve(async (req: Request) => {
     if (insertError) {
       console.error("DB insert error:", insertError);
       return new Response(
-        JSON.stringify({ error: "Failed to save coin", details: insertError.message }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({
+          error: "Failed to save coin",
+          details: insertError.message,
+        }),
+        { status: 500, headers: CORS_HEADERS }
       );
     }
 
     return new Response(JSON.stringify({ coin: insertedCoin }), {
       status: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
+      headers: CORS_HEADERS,
     });
   } catch (err) {
     console.error("Unexpected error:", err);
     return new Response(
-      JSON.stringify({ error: "Internal server error", details: String(err) }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
+      JSON.stringify({
+        error: "Internal server error",
+        details: String(err),
+      }),
+      { status: 500, headers: CORS_HEADERS }
     );
   }
 });

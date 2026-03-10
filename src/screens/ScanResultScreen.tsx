@@ -19,6 +19,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   LayoutChangeEvent,
+  Linking,
 } from "react-native";
 import Animated from "react-native-reanimated";
 import {
@@ -29,6 +30,7 @@ import {
   Trash2,
   FolderPlus,
   Info,
+  Sparkles,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -45,10 +47,14 @@ import BottomSheet, {
 } from "@gorhom/bottom-sheet";
 import type { MainStackParamList } from "../navigation/MainStack";
 import { useThemeColors } from "../theme/useThemeColors";
+import { LinearGradient } from "expo-linear-gradient";
 import { triggerSelection } from "../lib/haptics";
 import { supabase } from "../lib/supabase";
 import { useSupabaseSession } from "../lib/useSupabaseSession";
+import { searchEbayProducts, EbayItem } from "../lib/ebaySearch";
 import type { CollectionRow } from "./tabs/CollectionsScreen";
+import { ChevronRight } from "lucide-react-native";
+import CoinIllustration from "../../assets/home/coin.svg";
 
 type Nav = NativeStackNavigationProp<MainStackParamList>;
 type Route = RouteProp<MainStackParamList, "ScanResult">;
@@ -124,6 +130,32 @@ function formatPrice(min: number | null, max: number | null): string {
   return "-";
 }
 
+function formatSinglePrice(value: number | null): string {
+  if (value == null) return "-";
+  return `$${value.toFixed(2)}`;
+}
+
+function parseEbayPrice(price: string | null): number | null {
+  if (!price) return null;
+  const normalized = price.replace(/[^0-9.]/g, "");
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function gradeValueToPosition(value: number): number {
+  if (value <= GRADE_MARKS[0]) return 0;
+  if (value >= GRADE_MARKS[GRADE_MARKS.length - 1]) return 100;
+  for (let i = 0; i < GRADE_MARKS.length - 1; i++) {
+    const a = GRADE_MARKS[i];
+    const b = GRADE_MARKS[i + 1];
+    if (value >= a && value <= b) {
+      const t = (value - a) / (b - a);
+      return ((i + t) / (GRADE_MARKS.length - 1)) * 100;
+    }
+  }
+  return 50;
+}
+
 function GradeScale({
   value,
   label,
@@ -133,30 +165,39 @@ function GradeScale({
   label: string | null;
   onInfoPress: () => void;
 }) {
-  const position = value ? Math.min(Math.max((value / 70) * 100, 2), 98) : 0;
+  const position =
+    value != null ? Math.min(Math.max(gradeValueToPosition(value), 2), 98) : 0;
   return (
     <View style={gradeStyles.container}>
       <View style={gradeStyles.headerRow}>
-        <View style={gradeStyles.headerLeft}>
-          <Text style={gradeStyles.headerLabel}>Coin Grading</Text>
+        <Text style={gradeStyles.headerLabel}>Coin Grading</Text>
+        <View style={gradeStyles.gradeValueRight}>
+          <Text style={gradeStyles.gradeValueLabel}>{label || "-"}</Text>
+          <Text style={gradeStyles.gradeValueNum}> ({value ?? "-"})</Text>
           <TouchableOpacity
             onPress={onInfoPress}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={gradeStyles.infoBtn}
           >
-            <Info size={16} color="#999" />
+            <Info size={18} color="#999" />
           </TouchableOpacity>
-        </View>
-        <View style={gradeStyles.gradeValuePill}>
-          <Text style={gradeStyles.gradeValueLabel}>{label || "-"}</Text>
-          <Text style={gradeStyles.gradeValueNum}>({value ?? "-"})</Text>
-          <View style={gradeStyles.gradeDot} />
         </View>
       </View>
       <View style={gradeStyles.scaleBar}>
-        <View style={gradeStyles.scaleFill} />
+        <LinearGradient
+          colors={["#F59E0B", "#2EDE8E"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={gradeStyles.scaleFill}
+        />
         {value != null && (
-          <View style={[gradeStyles.scaleMarker, { left: `${position}%` }]}>
-            <View style={gradeStyles.scaleMarkerDot} />
+          <View
+            style={[
+              gradeStyles.scaleMarker,
+              { left: `${position}%`, transform: [{ translateX: -1.5 }] },
+            ]}
+          >
+            <View style={gradeStyles.scaleMarkerLine} />
           </View>
         )}
       </View>
@@ -200,8 +241,11 @@ export default function ScanResultScreen() {
   const [newCollectionName, setNewCollectionName] = useState("");
   const [loadingCollections, setLoadingCollections] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [ebayItems, setEbayItems] = useState<EbayItem[]>([]);
+  const [ebayLoading, setEbayLoading] = useState(true);
 
   const scrollRef = useRef<ScrollView>(null);
+  const tabsScrollRef = useRef<ScrollView>(null);
   const moreSheetRef = useRef<BottomSheet>(null);
   const addToSheetRef = useRef<BottomSheet>(null);
   const guideSheetRef = useRef<BottomSheet>(null);
@@ -213,12 +257,31 @@ export default function ScanResultScreen() {
     History: 0,
     Products: 0,
   });
-  const tabRowOffset = useRef(0);
+  const tabRowOffset = useRef(0); // Y in scroll content where sections start (below tab row)
+  const tabRowHeight = useRef(48);
+  const tabRowWidth = useRef(0);
+  const tabLayouts = useRef<
+    Partial<Record<TabKey, { x: number; width: number }>>
+  >({});
   const isUserTap = useRef(false);
 
   const coinInCollection = useMemo(() => {
     return collections.find((c) => c.coin_ids?.includes(coin.id)) ?? null;
   }, [collections, coin.id]);
+
+  const ebayPrices = useMemo(
+    () =>
+      ebayItems
+        .map((item) => parseEbayPrice(item.price))
+        .filter((price): price is number => price != null),
+    [ebayItems],
+  );
+
+  const averageEbayPrice = useMemo(() => {
+    if (ebayPrices.length === 0) return null;
+    const total = ebayPrices.reduce((sum, price) => sum + price, 0);
+    return total / ebayPrices.length;
+  }, [ebayPrices]);
 
   const allCoinIds = useMemo(() => {
     const ids = new Set<number>();
@@ -265,6 +328,34 @@ export default function ScanResultScreen() {
         }
       });
   }, [allCoinIds.join(",")]);
+
+  // Fetch eBay products
+  useEffect(() => {
+    let cancelled = false;
+    setEbayLoading(true);
+
+    searchEbayProducts(coin.name, coin.country, coin.year_start)
+      .then((result) => {
+        if (cancelled) return;
+        setEbayLoading(false);
+        if (result?.ebay_items) {
+          setEbayItems(result.ebay_items);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setEbayLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [coin.name, coin.country, coin.year_start]);
+
+  const openEbayLink = (url: string) => {
+    Linking.openURL(url).catch(() => {
+      Alert.alert("Error", "Could not open link");
+    });
+  };
 
   const getCollectionCoins = (collection: CollectionRow): CoinImageRow[] => {
     return (collection.coin_ids ?? [])
@@ -393,13 +484,26 @@ export default function ScanResultScreen() {
   );
 
   const yearStr = formatYear(coin.year_start, coin.year_end);
+  const displayPrice = ebayLoading
+    ? null
+    : averageEbayPrice != null
+      ? formatSinglePrice(averageEbayPrice)
+      : formatPrice(coin.estimated_price_min, coin.estimated_price_max);
+  const priceSubtext = ebayLoading
+    ? null
+    : averageEbayPrice != null
+      ? `Average of ${ebayPrices.length} eBay listings`
+      : "Estimated price";
 
   const scrollToSection = (tab: TabKey) => {
     triggerSelection();
     isUserTap.current = true;
     setActiveTab(tab);
-    const offset = sectionOffsets.current[tab];
-    scrollRef.current?.scrollTo({ y: offset - 60, animated: true });
+    const sectionYInWrap = sectionOffsets.current[tab];
+    const sectionsStartY = tabRowOffset.current;
+    const headerH = tabRowHeight.current;
+    const targetY = Math.max(0, sectionsStartY + sectionYInWrap - headerH);
+    scrollRef.current?.scrollTo({ y: targetY, animated: true });
     setTimeout(() => {
       isUserTap.current = false;
     }, 500);
@@ -407,10 +511,12 @@ export default function ScanResultScreen() {
 
   const handleScroll = (event: any) => {
     if (isUserTap.current) return;
-    const y = event.nativeEvent.contentOffset.y + 70;
+    const scrollY = event.nativeEvent.contentOffset.y;
+    const base = tabRowOffset.current;
+    const threshold = tabRowHeight.current + 20;
     const tabs: TabKey[] = ["Products", "History", "Dimensions", "Details"];
     for (const tab of tabs) {
-      if (y >= sectionOffsets.current[tab]) {
+      if (scrollY + threshold >= base + sectionOffsets.current[tab]) {
         setActiveTab(tab);
         return;
       }
@@ -421,6 +527,14 @@ export default function ScanResultScreen() {
   const onSectionLayout = (tab: TabKey) => (e: LayoutChangeEvent) => {
     sectionOffsets.current[tab] = e.nativeEvent.layout.y;
   };
+
+  useEffect(() => {
+    const layout = tabLayouts.current[activeTab];
+    const containerWidth = tabRowWidth.current;
+    if (!layout || !containerWidth) return;
+    const targetX = Math.max(0, layout.x - (containerWidth - layout.width) / 2);
+    tabsScrollRef.current?.scrollTo({ x: targetX, animated: true });
+  }, [activeTab]);
 
   return (
     <View
@@ -516,7 +630,11 @@ export default function ScanResultScreen() {
                 { backgroundColor: colors.background.bgAlt },
               ]}
             >
-              <Text style={[styles.statValue, { color: colors.text.textBase }]}>
+              <Text
+                style={[styles.statValue, { color: colors.text.textBase }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
                 {coin.composition || "-"}
               </Text>
               <Text style={[styles.statLabel, { color: colors.text.textAlt }]}>
@@ -527,23 +645,56 @@ export default function ScanResultScreen() {
 
           <View
             style={[
-              styles.priceSection,
-              { borderColor: colors.border.border3 },
+              styles.priceRow,
+              { backgroundColor: colors.surface.onBgBase },
             ]}
           >
-            <Text style={[styles.priceText, { color: colors.text.textBase }]}>
-              {formatPrice(coin.estimated_price_min, coin.estimated_price_max)}
-            </Text>
-            <Text style={[styles.priceSubtext, { color: colors.text.textAlt }]}>
-              Price depends on eBay
-            </Text>
-          </View>
+            <View style={[styles.priceSection]}>
+              {displayPrice ? (
+                <>
+                  <Text
+                    style={[styles.priceText, { color: colors.text.textBase }]}
+                  >
+                    {displayPrice}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.priceSubtext,
+                      { color: colors.text.textAlt },
+                    ]}
+                  >
+                    {priceSubtext}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <View
+                    style={{
+                      width: 160,
+                      height: 28,
+                      borderRadius: 8,
+                      backgroundColor: colors.surface.onBgAlt,
+                      marginBottom: 6,
+                    }}
+                  />
+                  <View
+                    style={{
+                      width: 120,
+                      height: 14,
+                      borderRadius: 6,
+                      backgroundColor: colors.surface.onBgAlt,
+                    }}
+                  />
+                </>
+              )}
+            </View>
 
-          <GradeScale
-            value={coin.grade_value}
-            label={coin.grade_label}
-            onInfoPress={() => guideSheetRef.current?.expand()}
-          />
+            <GradeScale
+              value={coin.grade_value}
+              label={coin.grade_label}
+              onInfoPress={() => guideSheetRef.current?.expand()}
+            />
+          </View>
         </View>
 
         {/* Sticky Tab Row */}
@@ -552,25 +703,44 @@ export default function ScanResultScreen() {
             styles.tabsRow,
             {
               backgroundColor: colors.background.bgBaseElevated,
-              borderBottomColor: colors.border.border3,
             },
           ]}
+          onLayout={(e) => {
+            const { y, height } = e.nativeEvent.layout;
+            tabRowOffset.current = y + height;
+            tabRowHeight.current = height;
+          }}
         >
           <ScrollView
+            ref={tabsScrollRef}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.tabsInner}
+            onLayout={(e) => {
+              tabRowWidth.current = e.nativeEvent.layout.width;
+            }}
           >
             {TAB_KEYS.map((tab) => (
               <TouchableOpacity
                 key={tab}
+                activeOpacity={0.85}
                 style={[
                   styles.tab,
-                  activeTab === tab && {
-                    borderBottomColor: colors.text.textBrand,
-                    borderBottomWidth: 2,
+                  {
+                    backgroundColor:
+                      activeTab === tab
+                        ? colors.background.bgInverse
+                        : "transparent",
+                    borderColor:
+                      activeTab === tab
+                        ? colors.background.bgInverse
+                        : colors.border.border4,
                   },
                 ]}
+                onLayout={(e) => {
+                  const { x, width } = e.nativeEvent.layout;
+                  tabLayouts.current[tab] = { x, width };
+                }}
                 onPress={() => scrollToSection(tab)}
               >
                 <Text
@@ -579,7 +749,7 @@ export default function ScanResultScreen() {
                     {
                       color:
                         activeTab === tab
-                          ? colors.text.textBase
+                          ? colors.text.textInverse
                           : colors.text.textAlt,
                     },
                     activeTab === tab && { fontWeight: "700" },
@@ -595,7 +765,13 @@ export default function ScanResultScreen() {
         {/* All Sections */}
         <View style={styles.sectionsWrap}>
           {/* Details / Specifications */}
-          <View onLayout={onSectionLayout("Details")}>
+          <View
+            onLayout={onSectionLayout("Details")}
+            style={[
+              styles.sectionBlock,
+              { backgroundColor: colors.surface.onBgBase, marginTop: 12 },
+            ]}
+          >
             <Text
               style={[styles.sectionTitle, { color: colors.text.textBase }]}
             >
@@ -621,48 +797,55 @@ export default function ScanResultScreen() {
           {/* Dimensions */}
           <View
             onLayout={onSectionLayout("Dimensions")}
-            style={styles.sectionBlock}
+            style={[
+              styles.sectionBlock,
+              {
+                backgroundColor: colors.surface.onBgBase,
+                flexDirection: "row",
+                justifyContent: "space-between",
+                gap: 20,
+              },
+            ]}
           >
-            <Text
-              style={[styles.sectionTitle, { color: colors.text.textBase }]}
-            >
-              Dimensions
-            </Text>
-            <View style={styles.dimensionsCard}>
-              <View style={styles.dimContent}>
-                <View style={styles.dimRow}>
-                  <Text style={styles.dimLabel}>Weight:</Text>
-                  <Text style={styles.dimValue}>
-                    {coin.weight_grams ? `${coin.weight_grams} grams` : "-"}
-                  </Text>
-                </View>
-                <View style={styles.dimRow}>
-                  <Text style={styles.dimLabel}>Diameter:</Text>
-                  <Text style={styles.dimValue}>
-                    {coin.diameter_mm ? `${coin.diameter_mm} mm` : "-"}
-                  </Text>
-                </View>
-                <View style={styles.dimRow}>
-                  <Text style={styles.dimLabel}>Thickness:</Text>
-                  <Text style={styles.dimValue}>
-                    {coin.thickness_mm ? `~${coin.thickness_mm} mm` : "-"}
-                  </Text>
+            <View style={{ flex: 1 }}>
+              <Text
+                style={[styles.sectionTitle, { color: colors.text.textBase }]}
+              >
+                Dimensions
+              </Text>
+              <View style={styles.dimensionsCard}>
+                <View>
+                  <View style={styles.dimRow}>
+                    <Text style={styles.dimLabel}>Weight:</Text>
+                    <Text style={styles.dimValue}>
+                      {coin.weight_grams ? `${coin.weight_grams} grams` : "-"}
+                    </Text>
+                  </View>
+                  <View style={styles.dimRow}>
+                    <Text style={styles.dimLabel}>Diameter:</Text>
+                    <Text style={styles.dimValue}>
+                      {coin.diameter_mm ? `${coin.diameter_mm} mm` : "-"}
+                    </Text>
+                  </View>
+                  <View style={styles.dimRow}>
+                    <Text style={styles.dimLabel}>Thickness:</Text>
+                    <Text style={styles.dimValue}>
+                      {coin.thickness_mm ? `~${coin.thickness_mm} mm` : "-"}
+                    </Text>
+                  </View>
                 </View>
               </View>
-              {coin.back_image_url && (
-                <Image
-                  source={{ uri: coin.back_image_url }}
-                  style={styles.dimCoinImage}
-                  resizeMode="contain"
-                />
-              )}
             </View>
+            <CoinIllustration width={120} height={120} />
           </View>
 
           {/* History */}
           <View
             onLayout={onSectionLayout("History")}
-            style={styles.sectionBlock}
+            style={[
+              styles.sectionBlock,
+              { backgroundColor: colors.surface.onBgBase },
+            ]}
           >
             <Text
               style={[styles.sectionTitle, { color: colors.text.textBase }]}
@@ -691,10 +874,27 @@ export default function ScanResultScreen() {
 
           {/* AI Opinion */}
           {coin.ai_opinion && (
-            <View style={[styles.aiCard, { backgroundColor: "#FFF8EC" }]}>
-              <Text style={[styles.aiTitle, { color: colors.text.textBrand }]}>
-                AI Opinion
-              </Text>
+            <View
+              style={[
+                styles.sectionBlock,
+                { backgroundColor: colors.surface.onBgBase },
+              ]}
+            >
+              <View style={styles.cardHeader}>
+                <View
+                  style={[
+                    styles.cardIconWrap,
+                    { backgroundColor: "rgba(212, 160, 18, 0.12)" },
+                  ]}
+                >
+                  <Sparkles size={20} color="#D4A012" />
+                </View>
+                <Text
+                  style={[styles.cardTitle, { color: colors.text.textBase }]}
+                >
+                  AI Opinion
+                </Text>
+              </View>
               <Text style={[styles.aiText, { color: colors.text.textBase }]}>
                 {coin.ai_opinion}
               </Text>
@@ -704,7 +904,7 @@ export default function ScanResultScreen() {
           {/* Products */}
           <View
             onLayout={onSectionLayout("Products")}
-            style={styles.sectionBlock}
+            style={[styles.sectionBlock, { padding: 0 }]}
           >
             <Text
               style={[styles.sectionTitle, { color: colors.text.textBase }]}
@@ -712,48 +912,97 @@ export default function ScanResultScreen() {
               Similar Products from Ebay
             </Text>
             <View style={styles.productsGrid}>
-              <View
-                style={[
-                  styles.productCard,
-                  { backgroundColor: colors.surface.onBgBase },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.productImagePlaceholder,
-                    { backgroundColor: colors.surface.onBgAlt },
-                  ]}
-                />
+              {ebayLoading ? (
+                <>
+                  {[1, 2, 3, 4].map((i) => (
+                    <View
+                      key={i}
+                      style={[
+                        styles.productCard,
+                        { backgroundColor: colors.surface.onBgBase },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.productImagePlaceholder,
+                          { backgroundColor: colors.surface.onBgAlt },
+                        ]}
+                      />
+                      <View
+                        style={[
+                          styles.productNamePlaceholder,
+                          { backgroundColor: colors.surface.onBgAlt },
+                        ]}
+                      />
+                      <View
+                        style={[
+                          styles.productPricePlaceholder,
+                          { backgroundColor: colors.surface.onBgAlt },
+                        ]}
+                      />
+                    </View>
+                  ))}
+                </>
+              ) : ebayItems.length === 0 ? (
                 <Text
                   style={[
-                    styles.productName,
+                    styles.noProductsText,
                     { color: colors.text.textTertiary },
                   ]}
                 >
-                  Coming soon
+                  No similar products found
                 </Text>
-              </View>
-              <View
-                style={[
-                  styles.productCard,
-                  { backgroundColor: colors.surface.onBgBase },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.productImagePlaceholder,
-                    { backgroundColor: colors.surface.onBgAlt },
-                  ]}
-                />
-                <Text
-                  style={[
-                    styles.productName,
-                    { color: colors.text.textTertiary },
-                  ]}
-                >
-                  Coming soon
-                </Text>
-              </View>
+              ) : (
+                ebayItems.slice(0, 4).map((item, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.productCard,
+                      { backgroundColor: colors.surface.onBgBase },
+                    ]}
+                    onPress={() => openEbayLink(item.itemWebUrl)}
+                    activeOpacity={0.8}
+                  >
+                    {item.imageUrl ? (
+                      <Image
+                        source={{ uri: item.imageUrl }}
+                        style={styles.productImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View
+                        style={[
+                          styles.productImagePlaceholder,
+                          { backgroundColor: colors.surface.onBgAlt },
+                        ]}
+                      />
+                    )}
+                    <Text
+                      style={[
+                        styles.productName,
+                        { color: colors.text.textBase },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {item.title}
+                    </Text>
+                    <View style={styles.productPriceRow}>
+                      <Text
+                        style={[
+                          styles.productPrice,
+                          { color: colors.background.brand },
+                        ]}
+                      >
+                        ${item.price ?? "—"}
+                      </Text>
+                      <ChevronRight
+                        size={16}
+                        color={colors.text.textTertiary}
+                      />
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
             </View>
           </View>
 
@@ -809,7 +1058,12 @@ export default function ScanResultScreen() {
         enablePanDownToClose
         backdropComponent={renderBackdrop}
         backgroundStyle={{ backgroundColor: colors.background.bgBase }}
-        handleIndicatorStyle={{ backgroundColor: colors.border.border3, width: 36, height: 4, borderRadius: 2 }}
+        handleIndicatorStyle={{
+          backgroundColor: colors.border.border3,
+          width: 36,
+          height: 4,
+          borderRadius: 2,
+        }}
       >
         <BottomSheetView style={sheetStyles.container}>
           <TouchableOpacity style={sheetStyles.row} onPress={openAddToSheet}>
@@ -841,11 +1095,18 @@ export default function ScanResultScreen() {
       <BottomSheet
         ref={addToSheetRef}
         index={-1}
-        snapPoints={["55%"]}
+        snapPoints={["60%"]}
         enablePanDownToClose
         backdropComponent={renderBackdrop}
-        backgroundStyle={{ backgroundColor: colors.background.bgBase }}
-        handleIndicatorStyle={{ backgroundColor: colors.border.border3 }}
+        backgroundStyle={{
+          backgroundColor: colors.surface.onBgBase,
+          borderTopLeftRadius: 28,
+          borderTopRightRadius: 28,
+        }}
+        handleIndicatorStyle={{
+          backgroundColor: colors.border.border3,
+          width: 40,
+        }}
       >
         <BottomSheetView style={sheetStyles.container}>
           <View style={sheetStyles.headerRow}>
@@ -856,6 +1117,12 @@ export default function ScanResultScreen() {
               <X size={24} color={colors.text.textBase} />
             </TouchableOpacity>
           </View>
+          <View
+            style={[
+              sheetStyles.divider,
+              { backgroundColor: colors.border.border3 },
+            ]}
+          />
           {loadingCollections ? (
             <ActivityIndicator
               size="small"
@@ -863,7 +1130,10 @@ export default function ScanResultScreen() {
               style={{ marginVertical: 20 }}
             />
           ) : (
-            <BottomSheetScrollView style={{ flex: 1 }}>
+            <BottomSheetScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={sheetStyles.scrollContent}
+            >
               {collections.map((col) => {
                 const isSelected = selectedCollectionId === col.id;
                 const coinImages = getCollectionCoins(col);
@@ -874,8 +1144,9 @@ export default function ScanResultScreen() {
                       sheetStyles.collectionRow,
                       {
                         borderColor: isSelected
-                          ? colors.text.textBrand
+                          ? colors.text.textBase
                           : colors.border.border3,
+                        backgroundColor: colors.surface.onBgBase,
                       },
                       isSelected && { borderWidth: 2 },
                     ]}
@@ -909,7 +1180,10 @@ export default function ScanResultScreen() {
                           }}
                           style={[
                             sheetStyles.collectionCoinImg,
-                            { marginLeft: idx > 0 ? -12 : 0 },
+                            {
+                              marginLeft: idx > 0 ? -12 : 0,
+                              borderColor: colors.surface.onBgBase,
+                            },
                           ]}
                         />
                       ))}
@@ -918,7 +1192,13 @@ export default function ScanResultScreen() {
                 );
               })}
               <TouchableOpacity
-                style={sheetStyles.newFolderRow}
+                style={[
+                  sheetStyles.newFolderRow,
+                  {
+                    borderColor: colors.border.border3,
+                    backgroundColor: colors.surface.onBgBase,
+                  },
+                ]}
                 onPress={openNewCollectionSheet}
               >
                 <View>
@@ -942,14 +1222,20 @@ export default function ScanResultScreen() {
                 <View
                   style={[
                     sheetStyles.plusCircle,
-                    { backgroundColor: colors.background.bgAlt },
+                    { backgroundColor: colors.border.border3 },
                   ]}
                 >
-                  <Plus size={20} color={colors.text.textBase} />
+                  <Plus size={22} color={colors.text.textBase} />
                 </View>
               </TouchableOpacity>
             </BottomSheetScrollView>
           )}
+          <View
+            style={[
+              sheetStyles.divider,
+              { backgroundColor: colors.border.border3 },
+            ]}
+          />
           <TouchableOpacity
             style={[
               sheetStyles.confirmBtn,
@@ -1054,11 +1340,15 @@ export default function ScanResultScreen() {
       <BottomSheet
         ref={newCollectionSheetRef}
         index={-1}
-        snapPoints={["40%"]}
+        snapPoints={["33%"]}
         enablePanDownToClose
         backdropComponent={renderBackdrop}
-        backgroundStyle={{ backgroundColor: colors.background.bgBase }}
-        handleIndicatorStyle={{ backgroundColor: colors.border.border3 }}
+        backgroundStyle={{
+          backgroundColor: colors.surface.onBgBase,
+          borderTopLeftRadius: 28,
+          borderTopRightRadius: 28,
+        }}
+        handleIndicatorStyle={{ backgroundColor: colors.border.border3, width: 40 }}
         keyboardBehavior="interactive"
         android_keyboardInputMode="adjustResize"
       >
@@ -1066,7 +1356,7 @@ export default function ScanResultScreen() {
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={{ flex: 1 }}
         >
-          <BottomSheetView style={sheetStyles.container}>
+          <BottomSheetView style={sheetStyles.newCollectionContainer}>
             <View style={sheetStyles.headerRow}>
               <Text
                 style={[sheetStyles.title, { color: colors.text.textBase }]}
@@ -1079,6 +1369,13 @@ export default function ScanResultScreen() {
                 <X size={24} color={colors.text.textBase} />
               </TouchableOpacity>
             </View>
+            <View
+              style={[
+                sheetStyles.divider,
+                { backgroundColor: colors.border.border3 },
+              ]}
+            />
+            <View style={sheetStyles.newCollectionBody}>
             <Text
               style={[sheetStyles.inputLabel, { color: colors.text.textBase }]}
             >
@@ -1098,12 +1395,14 @@ export default function ScanResultScreen() {
               value={newCollectionName}
               onChangeText={setNewCollectionName}
             />
+            </View>
             <TouchableOpacity
               style={[
                 sheetStyles.confirmBtn,
+                sheetStyles.newCollectionFooter,
                 {
                   backgroundColor: newCollectionName.trim()
-                    ? colors.background.brand
+                    ? colors.background.bgInverse
                     : colors.border.border3,
                 },
               ]}
@@ -1119,7 +1418,7 @@ export default function ScanResultScreen() {
                     sheetStyles.confirmBtnText,
                     {
                       color: newCollectionName.trim()
-                        ? "#fff"
+                        ? colors.text.textInverse
                         : colors.text.textTertiary,
                     },
                   ]}
@@ -1184,44 +1483,71 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 14,
+    gap: 4,
   },
   statValue: { fontSize: 16, fontWeight: "700" },
   statLabel: { fontSize: 12, marginTop: 2 },
 
+  priceRow: {
+    marginBottom: 16,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+  },
   priceSection: {
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
+    alignItems: "center",
     paddingVertical: 14,
     marginBottom: 16,
   },
-  priceText: { fontSize: 24, fontWeight: "800" },
-  priceSubtext: { fontSize: 12, marginTop: 2 },
+  priceText: { fontSize: 28, fontWeight: "700" },
+  priceSubtext: { fontSize: 14, marginTop: 2 },
 
-  tabsRow: { borderBottomWidth: 1, paddingHorizontal: 20, zIndex: 10 },
-  tabsInner: { flexDirection: "row", gap: 0 },
-  tab: { paddingHorizontal: 16, paddingVertical: 12, alignItems: "center" },
-  tabText: { fontSize: 14 },
+  tabsRow: {
+    paddingTop: 10,
+    paddingBottom: 12,
+    zIndex: 10,
+  },
+  tabsInner: {
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 20,
+  },
+  tab: {
+    height: 36,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 22,
+    borderWidth: 1,
+  },
+  tabText: { fontSize: 14, fontWeight: "600" },
 
-  sectionsWrap: { paddingHorizontal: 20, paddingTop: 16 },
+  sectionsWrap: { paddingHorizontal: 20 },
   sectionTitle: { fontSize: 16, fontWeight: "700", marginBottom: 12 },
-  sectionBlock: { marginTop: 24 },
+  sectionBlock: { marginTop: 16, borderRadius: 12, padding: 16 },
 
   dimensionsCard: { flexDirection: "row", alignItems: "center" },
-  dimContent: { flex: 1 },
   dimRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     paddingVertical: 6,
   },
   dimLabel: { fontSize: 14, color: "#666" },
-  dimValue: { fontSize: 14, color: "#333", fontWeight: "500" },
-  dimCoinImage: { width: 80, height: 80, borderRadius: 40, marginLeft: 16 },
+  dimValue: { fontSize: 14, color: "#333", fontWeight: "500", paddingLeft: 12 },
 
+  cardHeader: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+  cardIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+  },
+  cardTitle: { fontSize: 16, fontWeight: "700" },
   historyText: { fontSize: 14, lineHeight: 22 },
   moreBtn: { fontSize: 14, fontWeight: "600", marginTop: 6 },
 
   aiCard: { borderRadius: 16, padding: 16, marginTop: 24, marginBottom: 8 },
-  aiTitle: { fontSize: 16, fontWeight: "700", marginBottom: 8 },
   aiText: { fontSize: 14, lineHeight: 22 },
 
   productsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
@@ -1229,11 +1555,63 @@ const styles = StyleSheet.create({
     width: (SCREEN_WIDTH - 52) / 2,
     borderRadius: 12,
     overflow: "hidden",
+    paddingBottom: 12,
   },
-  productImagePlaceholder: { width: "100%", aspectRatio: 1, borderRadius: 8 },
-  productName: { fontSize: 13, padding: 8 },
+  productImage: {
+    width: "100%",
+    aspectRatio: 1,
+    borderRadius: 8,
+  },
+  productImagePlaceholder: {
+    width: "100%",
+    aspectRatio: 1,
+    borderRadius: 8,
+  },
+  productName: {
+    fontSize: 14,
+    fontWeight: "500",
+    paddingHorizontal: 8,
+    paddingTop: 10,
+    lineHeight: 20,
+  },
+  productNamePlaceholder: {
+    height: 16,
+    borderRadius: 4,
+    marginHorizontal: 8,
+    marginTop: 10,
+    width: "80%",
+  },
+  productPricePlaceholder: {
+    height: 14,
+    borderRadius: 4,
+    marginHorizontal: 8,
+    marginTop: 6,
+    width: "40%",
+  },
+  productPriceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 8,
+    paddingTop: 4,
+  },
+  productPrice: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  noProductsText: {
+    fontSize: 14,
+    textAlign: "center",
+    paddingVertical: 24,
+    width: "100%",
+  },
 
-  disclaimer: { fontSize: 12, textAlign: "center", marginTop: 24 },
+  disclaimer: {
+    fontSize: 14,
+    textAlign: "center",
+    marginTop: 24,
+    paddingHorizontal: 30,
+  },
 
   bottomCta: {
     position: "absolute",
@@ -1254,29 +1632,23 @@ const styles = StyleSheet.create({
 });
 
 const gradeStyles = StyleSheet.create({
-  container: { marginBottom: 16 },
+  container: { marginBottom: 16, gap: 8 },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 10,
   },
-  headerLeft: { flexDirection: "row", alignItems: "center", gap: 6 },
-  headerLabel: { fontSize: 14, color: "#666" },
-  gradeValuePill: { flexDirection: "row", alignItems: "center", gap: 4 },
+  headerLabel: { fontSize: 14, fontWeight: "500", color: "#666" },
+  gradeValueRight: { flexDirection: "row", alignItems: "center" },
   gradeValueLabel: { fontSize: 14, color: "#333", fontWeight: "500" },
   gradeValueNum: { fontSize: 14, color: "#333" },
-  gradeDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "#DFAC4C",
-  },
+  infoBtn: { marginLeft: 6 },
   scaleBar: {
-    height: 6,
+    height: 8,
     backgroundColor: "#E8E8E8",
-    borderRadius: 3,
-    marginBottom: 6,
+    borderRadius: 4,
+    marginBottom: 8,
     position: "relative",
     overflow: "visible",
   },
@@ -1284,24 +1656,16 @@ const gradeStyles = StyleSheet.create({
     position: "absolute",
     left: 0,
     top: 0,
-    height: 6,
-    backgroundColor: "#DFAC4C",
-    borderRadius: 3,
+    height: 8,
+    borderRadius: 4,
     width: "100%",
   },
-  scaleMarker: { position: "absolute", top: -5, marginLeft: -8 },
-  scaleMarkerDot: {
-    width: 16,
+  scaleMarker: { position: "absolute", top: -4, marginLeft: -1 },
+  scaleMarkerLine: {
+    width: 3,
     height: 16,
-    borderRadius: 8,
-    backgroundColor: "#DFAC4C",
-    borderWidth: 3,
-    borderColor: "#fff",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 3,
+    borderRadius: 1.5,
+    backgroundColor: "#1C1917",
   },
   scaleLabels: { flexDirection: "row", justifyContent: "space-between" },
   scaleLabelText: { fontSize: 11, color: "#999" },
@@ -1327,13 +1691,17 @@ const specStyles = StyleSheet.create({
 });
 
 const sheetStyles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: 20 },
+  container: { flex: 1 },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 20,
+    paddingHorizontal: 24,
+    paddingTop: 4,
+    paddingBottom: 18,
   },
+  divider: { height: StyleSheet.hairlineWidth, width: "100%" },
+  scrollContent: { paddingHorizontal: 24, paddingTop: 18, paddingBottom: 20 },
   title: { fontSize: 20, fontWeight: "700" },
   row: {
     flexDirection: "row",
@@ -1346,19 +1714,20 @@ const sheetStyles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
+    paddingVertical: 0,
+    paddingHorizontal: 18,
+    borderRadius: 20,
     borderWidth: 1,
-    marginBottom: 10,
+    marginBottom: 14,
+    minHeight: 84,
   },
-  collectionName: { fontSize: 16, fontWeight: "600" },
-  collectionCount: { fontSize: 13, marginTop: 2 },
+  collectionName: { fontSize: 18, fontWeight: "500" },
+  collectionCount: { fontSize: 15, marginTop: 4 },
   collectionCoins: { flexDirection: "row", alignItems: "center" },
   collectionCoinImg: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 2,
     borderColor: "#fff",
   },
@@ -1366,25 +1735,35 @@ const sheetStyles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginBottom: 10,
+    paddingVertical: 0,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    marginBottom: 14,
+    minHeight: 84,
+    borderWidth: 2,
+    borderStyle: "dashed",
   },
   plusCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
   },
   confirmBtn: {
-    borderRadius: 14,
+    borderRadius: 18,
     paddingVertical: 16,
     alignItems: "center",
-    marginTop: 12,
+    marginHorizontal: 24,
+    marginTop: 18,
+    marginBottom: 20,
   },
-  confirmBtnText: { color: "#fff", fontSize: 17, fontWeight: "700", paddingHorizontal: 20 },
+  confirmBtnText: {
+    color: "#fff",
+    fontSize: 17,
+    fontWeight: "700",
+    paddingHorizontal: 20,
+  },
   inputLabel: { fontSize: 15, fontWeight: "500", marginBottom: 8 },
   input: {
     borderRadius: 12,
@@ -1395,6 +1774,11 @@ const sheetStyles = StyleSheet.create({
     marginBottom: 16,
   },
   guideContainer: { flex: 1, paddingHorizontal: 20, alignItems: "center" },
+  newCollectionContainer: { flex: 1 },
+  newCollectionBody: { paddingHorizontal: 24, paddingTop: 18 },
+  newCollectionFooter: {
+    marginTop: "auto",
+  },
   guideTitle: {
     fontSize: 20,
     fontWeight: "700",

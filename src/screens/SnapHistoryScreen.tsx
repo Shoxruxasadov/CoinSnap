@@ -197,14 +197,17 @@ export default function SnapHistoryScreen() {
   const handleDeleteCoin = () => {
     actionSheetRef.current?.close();
     if (!selectedCoin) return;
+    const coinToDelete = selectedCoin;
     Alert.alert('Delete Coin', 'Are you sure you want to delete this coin?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete', style: 'destructive',
         onPress: async () => {
-          await supabase.from('coins').delete().eq('id', selectedCoin.id);
+          // Immediately remove from local state for instant UI feedback
+          setCoins((prev) => prev.filter((c) => c.id !== coinToDelete.id));
           setSelectedCoin(null);
-          fetchCoins();
+          // Then delete from database
+          await supabase.from('coins').delete().eq('id', coinToDelete.id);
         },
       },
     ]);

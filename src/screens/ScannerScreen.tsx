@@ -32,7 +32,7 @@ type Nav = NativeStackNavigationProp<MainStackParamList>;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CIRCLE_SIZE = SCREEN_WIDTH * 0.65;
-const SUPABASE_URL = 'https://lkkneoqzxgtqihpjrmbp.supabase.co';
+
 
 const ANALYSIS_STEPS = [
   { percent: 15, label: 'Processing images', seconds: 5 },
@@ -97,7 +97,6 @@ export default function ScannerScreen() {
   };
 
   const processImage = async (uri: string): Promise<string> => {
-    // Step 1: First crop to square and resize
     const { width, height } = await new Promise<{ width: number; height: number }>(
       (resolve, reject) => {
         Image.getSize(
@@ -122,14 +121,7 @@ export default function ScannerScreen() {
       { compress: 0.92, format: ImageManipulator.SaveFormat.JPEG },
     );
 
-    // Step 2: Process image (background removal + standardization)
-    try {
-      const { processedUri } = await processCoinImage(cropped.uri);
-      return processedUri;
-    } catch (err) {
-      console.warn('Image processing failed, using cropped image:', err);
-      return cropped.uri;
-    }
+    return cropped.uri;
   };
 
   const uploadImage = async (uri: string, side: string): Promise<string | null> => {
@@ -193,21 +185,55 @@ export default function ScannerScreen() {
       return;
     }
 
+    const existingImageCount = (frontImage ? 1 : 0) + (backImage ? 1 : 0);
+    const maxSelectionCount = existingImageCount === 0 ? 2 : 1;
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.85,
+      allowsMultipleSelection: maxSelectionCount > 1,
+      selectionLimit: maxSelectionCount,
+      orderedSelection: true,
     });
 
-    if (!result.canceled && result.assets[0]) {
-      const processed = await processImage(result.assets[0].uri);
+    if (result.canceled || !result.assets?.length) return;
 
-      if (step === 1) {
-        setFrontImage(processed);
-        setStep(2);
-      } else {
-        setBackImage(processed);
-        startProcessing(frontImage!, processed);
-      }
+    if (existingImageCount === 1 && result.assets.length !== 1) {
+      Alert.alert(
+        'Select required images',
+        'Please select exactly 1 more photo to complete the scan.',
+      );
+      return;
+    }
+
+    if (existingImageCount === 0 && result.assets.length >= 2) {
+      const [frontAsset, backAsset] = result.assets;
+      const processedFront = await processImage(frontAsset.uri);
+      const processedBack = await processImage(backAsset.uri);
+      setFrontImage(processedFront);
+      setBackImage(processedBack);
+      startProcessing(processedFront, processedBack);
+      return;
+    }
+
+    const processed = await processImage(result.assets[0].uri);
+    if (existingImageCount === 0) {
+      setFrontImage(processed);
+      setBackImage(null);
+      setStep(2);
+      return;
+    }
+
+    if (frontImage && !backImage) {
+      setBackImage(processed);
+      startProcessing(frontImage, processed);
+      return;
+    }
+
+    if (!frontImage && backImage) {
+      setFrontImage(processed);
+      startProcessing(processed, backImage);
+      return;
     }
   };
 
@@ -233,28 +259,22 @@ export default function ScannerScreen() {
     setProcessing(true);
 
     try {
+      // Background removal + standardization (parallel)
+      const [processedFront, processedBack] = await Promise.all([
+        processCoinImage(front).then(r => r.processedUri).catch(() => front),
+        processCoinImage(back).then(r => r.processedUri).catch(() => back),
+      ]);
+
       const [frontUrl, backUrl] = await Promise.all([
-        uploadImage(front, 'front'),
-        uploadImage(back, 'back'),
+        uploadImage(processedFront, 'front'),
+        uploadImage(processedBack, 'back'),
       ]);
 
       if (!frontUrl || !backUrl) {
         throw new Error('Failed to upload images');
       }
 
-      const getGeminiKey = async (): Promise<string> => {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
-        const token = currentSession?.access_token;
-        const res = await fetch(`${SUPABASE_URL}/functions/v1/get-gemini-key`, {
-          method: 'GET',
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to get API key');
-        return data.key;
-      };
-
-      const data = await analyzeCoinInApp(front, back, frontUrl, backUrl, userId, getGeminiKey);
+      const data = await analyzeCoinInApp(frontUrl, backUrl, userId);
 
       setProcessing(false);
       navigation.replace('ScanResult', { coin: data.coin });

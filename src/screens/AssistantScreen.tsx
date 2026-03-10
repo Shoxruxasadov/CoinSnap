@@ -254,6 +254,14 @@ export default function AssistantScreen() {
     }
   }, [messages.length, pendingImage]);
 
+  // Scroll to bottom on initial mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      listRef.current?.scrollToEnd({ animated: false });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
+
   const sendText = useCallback(
     async (text: string) => {
       const trimmed = (text || '').trim();
@@ -476,7 +484,7 @@ export default function AssistantScreen() {
             renderItem={renderItem}
             ListFooterComponent={listFooter}
             style={styles.list}
-            contentContainerStyle={{ paddingVertical: 16 }}
+            contentContainerStyle={{ paddingVertical: 16, flexGrow: 1 }}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
