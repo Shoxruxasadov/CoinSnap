@@ -1384,7 +1384,7 @@ const sheetStyles = StyleSheet.create({
     alignItems: "center",
     marginTop: 12,
   },
-  confirmBtnText: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  confirmBtnText: { color: "#fff", fontSize: 17, fontWeight: "700", paddingHorizontal: 20 },
   inputLabel: { fontSize: 15, fontWeight: "500", marginBottom: 8 },
   input: {
     borderRadius: 12,
