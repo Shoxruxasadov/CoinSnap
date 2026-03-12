@@ -327,40 +327,72 @@ export default function ScannerScreen() {
     const actions: ImageManipulator.Action[] = [];
 
     if (fromCamera) {
-      // iOS camera preview uses aspect-fill, but the captured photo may have different framing
-      // We need to map the circle position from screen coordinates to photo coordinates
+      // iOS camera always returns landscape-oriented images (e.g. 4032x3024)
+      // but the preview is shown in portrait mode via aspect-fill (cover).
+      // We need to map screen coordinates to photo coordinates accordingly.
       
-      // Calculate the ratio of circle position relative to screen center
-      const screenCenterY = SCREEN_HEIGHT / 2;
-      const circleOffsetRatioY = (CIRCLE_CENTER_Y - screenCenterY) / screenCenterY; // -1 to 1 range
+      // Determine if photo is landscape while screen is portrait
+      const photoIsLandscape = imgW > imgH;
+      const screenIsPortrait = SCREEN_HEIGHT > SCREEN_WIDTH;
+      const needsRotationMapping = photoIsLandscape && screenIsPortrait;
       
-      // Photo center
-      const photoCenterX = imgW / 2;
-      const photoCenterY = imgH / 2;
+      // Photo dimensions as they appear on screen (after rotation)
+      const displayW = needsRotationMapping ? imgH : imgW;
+      const displayH = needsRotationMapping ? imgW : imgH;
       
-      // Calculate crop size based on circle ratio
-      // The circle takes up CIRCLE_RATIO of screen width, we want similar ratio of photo
-      const cropSize = Math.round(Math.min(imgW, imgH) * CIRCLE_RATIO);
+      // Aspect-fill scale: photo scaled to fully cover screen
+      const scaleX = SCREEN_WIDTH / displayW;
+      const scaleY = SCREEN_HEIGHT / displayH;
+      const scale = Math.max(scaleX, scaleY);
       
-      // Apply the same relative offset from center
-      const photoOffsetY = circleOffsetRatioY * (imgH / 2);
+      // Visible portion of the (rotated) photo
+      const visibleW = SCREEN_WIDTH / scale;
+      const visibleH = SCREEN_HEIGHT / scale;
       
-      const originX = Math.round(photoCenterX - cropSize / 2);
-      const originY = Math.round(photoCenterY + photoOffsetY - cropSize / 2);
+      // Offset from top-left of (rotated) photo to visible area
+      const offsetX = (displayW - visibleW) / 2;
+      const offsetY = (displayH - visibleH) / 2;
       
-      // Clamp to valid range
-      const clampedOriginX = Math.max(0, Math.min(originX, imgW - cropSize));
-      const clampedOriginY = Math.max(0, Math.min(originY, imgH - cropSize));
+      // Circle center and radius in (rotated) photo coordinates
+      const circleCX = offsetX + (SCREEN_WIDTH / 2) / scale;
+      const circleCY = offsetY + CIRCLE_CENTER_Y / scale;
+      const circleR = (CIRCLE_SIZE / 2) / scale;
+      
+      let cropOriginX: number, cropOriginY: number, cropSize: number;
+      
+      if (needsRotationMapping) {
+        // Map from rotated coordinates back to actual photo coordinates
+        // Rotation: (rx, ry) in rotated -> (ry, displayW - rx) in actual photo
+        // Actually iOS applies EXIF rotation, so we map:
+        // rotated (x, y) -> actual photo (y, imgH - x) for 90° CW
+        // But expo-image-manipulator reads EXIF, so coordinates are in display orientation
+        cropSize = Math.round(circleR * 2);
+        cropOriginX = Math.round(circleCX - circleR);
+        cropOriginY = Math.round(circleCY - circleR);
+      } else {
+        cropSize = Math.round(circleR * 2);
+        cropOriginX = Math.round(circleCX - circleR);
+        cropOriginY = Math.round(circleCY - circleR);
+      }
+      
+      // Clamp to valid range within display dimensions
+      const maxW = needsRotationMapping ? displayW : imgW;
+      const maxH = needsRotationMapping ? displayH : imgH;
+      cropSize = Math.min(cropSize, maxW, maxH);
+      cropOriginX = Math.max(0, Math.min(cropOriginX, maxW - cropSize));
+      cropOriginY = Math.max(0, Math.min(cropOriginY, maxH - cropSize));
       
       console.log('Crop debug:', {
         screen: { w: SCREEN_WIDTH, h: SCREEN_HEIGHT, circleY: CIRCLE_CENTER_Y },
         photo: { w: imgW, h: imgH },
-        circleOffsetRatioY,
-        cropSize,
-        origin: { x: clampedOriginX, y: clampedOriginY }
+        display: { w: displayW, h: displayH },
+        needsRotationMapping,
+        scale,
+        circle: { cx: circleCX, cy: circleCY, r: circleR },
+        crop: { x: cropOriginX, y: cropOriginY, size: cropSize }
       });
 
-      actions.push({ crop: { originX: clampedOriginX, originY: clampedOriginY, width: cropSize, height: cropSize } });
+      actions.push({ crop: { originX: cropOriginX, originY: cropOriginY, width: cropSize, height: cropSize } });
       actions.push({ resize: { width: 1000 } });
     } else {
       const maxSize = 1200;
