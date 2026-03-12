@@ -327,72 +327,30 @@ export default function ScannerScreen() {
     const actions: ImageManipulator.Action[] = [];
 
     if (fromCamera) {
-      // iOS camera always returns landscape-oriented images (e.g. 4032x3024)
-      // but the preview is shown in portrait mode via aspect-fill (cover).
-      // We need to map screen coordinates to photo coordinates accordingly.
+      // expo-image-manipulator respects EXIF orientation, so imgW/imgH
+      // are already in the correct portrait orientation for crop coordinates.
+      // CameraView uses aspect-fill (cover) to display the preview.
       
-      // Determine if photo is landscape while screen is portrait
-      const photoIsLandscape = imgW > imgH;
-      const screenIsPortrait = SCREEN_HEIGHT > SCREEN_WIDTH;
-      const needsRotationMapping = photoIsLandscape && screenIsPortrait;
+      const scaleX = imgW / SCREEN_WIDTH;
+      const scaleY = imgH / SCREEN_HEIGHT;
+      const scale = Math.min(scaleX, scaleY); // aspect-fill uses the smaller scale
       
-      // Photo dimensions as they appear on screen (after rotation)
-      const displayW = needsRotationMapping ? imgH : imgW;
-      const displayH = needsRotationMapping ? imgW : imgH;
+      // Offset: centered overflow is cropped equally from both sides
+      const offsetX = (imgW - SCREEN_WIDTH * scale) / 2;
+      const offsetY = (imgH - SCREEN_HEIGHT * scale) / 2;
       
-      // Aspect-fill scale: photo scaled to fully cover screen
-      const scaleX = SCREEN_WIDTH / displayW;
-      const scaleY = SCREEN_HEIGHT / displayH;
-      const scale = Math.max(scaleX, scaleY);
+      // Map circle center & radius from screen to photo coordinates
+      const cx = offsetX + (SCREEN_WIDTH / 2) * scale;
+      const cy = offsetY + CIRCLE_CENTER_Y * scale;
+      const r = (CIRCLE_SIZE / 2) * scale;
       
-      // Visible portion of the (rotated) photo
-      const visibleW = SCREEN_WIDTH / scale;
-      const visibleH = SCREEN_HEIGHT / scale;
+      const cropSize = Math.round(r * 2);
+      const originX = Math.max(0, Math.min(Math.round(cx - r), imgW - cropSize));
+      const originY = Math.max(0, Math.min(Math.round(cy - r), imgH - cropSize));
       
-      // Offset from top-left of (rotated) photo to visible area
-      const offsetX = (displayW - visibleW) / 2;
-      const offsetY = (displayH - visibleH) / 2;
-      
-      // Circle center and radius in (rotated) photo coordinates
-      const circleCX = offsetX + (SCREEN_WIDTH / 2) / scale;
-      const circleCY = offsetY + CIRCLE_CENTER_Y / scale;
-      const circleR = (CIRCLE_SIZE / 2) / scale;
-      
-      let cropOriginX: number, cropOriginY: number, cropSize: number;
-      
-      if (needsRotationMapping) {
-        // Map from rotated coordinates back to actual photo coordinates
-        // Rotation: (rx, ry) in rotated -> (ry, displayW - rx) in actual photo
-        // Actually iOS applies EXIF rotation, so we map:
-        // rotated (x, y) -> actual photo (y, imgH - x) for 90° CW
-        // But expo-image-manipulator reads EXIF, so coordinates are in display orientation
-        cropSize = Math.round(circleR * 2);
-        cropOriginX = Math.round(circleCX - circleR);
-        cropOriginY = Math.round(circleCY - circleR);
-      } else {
-        cropSize = Math.round(circleR * 2);
-        cropOriginX = Math.round(circleCX - circleR);
-        cropOriginY = Math.round(circleCY - circleR);
-      }
-      
-      // Clamp to valid range within display dimensions
-      const maxW = needsRotationMapping ? displayW : imgW;
-      const maxH = needsRotationMapping ? displayH : imgH;
-      cropSize = Math.min(cropSize, maxW, maxH);
-      cropOriginX = Math.max(0, Math.min(cropOriginX, maxW - cropSize));
-      cropOriginY = Math.max(0, Math.min(cropOriginY, maxH - cropSize));
-      
-      console.log('Crop debug:', {
-        screen: { w: SCREEN_WIDTH, h: SCREEN_HEIGHT, circleY: CIRCLE_CENTER_Y },
-        photo: { w: imgW, h: imgH },
-        display: { w: displayW, h: displayH },
-        needsRotationMapping,
-        scale,
-        circle: { cx: circleCX, cy: circleCY, r: circleR },
-        crop: { x: cropOriginX, y: cropOriginY, size: cropSize }
-      });
+      console.log('Crop debug:', { imgW, imgH, scale, cx, cy, r, originX, originY, cropSize });
 
-      actions.push({ crop: { originX: cropOriginX, originY: cropOriginY, width: cropSize, height: cropSize } });
+      actions.push({ crop: { originX, originY, width: cropSize, height: cropSize } });
       actions.push({ resize: { width: 1000 } });
     } else {
       const maxSize = 1200;
@@ -733,7 +691,7 @@ export default function ScannerScreen() {
             </View>
           ) : (
             <View style={[styles.thumbnailPlaceholder, step === 2 && styles.thumbnailPlaceholderActive]}>
-              <Text style={styles.thumbnailPlaceholderText}>1</Text>
+              <Text style={[styles.thumbnailPlaceholderText, {fontWeight: '900'}]}>1</Text>
             </View>
           )}
           <Text style={styles.thumbnailLabel}>Reverse</Text>
@@ -1011,8 +969,8 @@ const styles = StyleSheet.create({
   },
   thumbnailPlaceholderText: {
     color: 'rgba(255,255,255,0.5)',
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '900',
   },
   thumbnailLabel: {
     color: 'rgba(255,255,255,0.7)',
