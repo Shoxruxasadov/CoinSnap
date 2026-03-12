@@ -34,21 +34,32 @@ CRITICAL GRADING RULES — Be ACCURATE about the coin's condition:
 - If the coin looks UNCIRCULATED (no wear on high points), grade MS-60 to MS-65
 - DO NOT under-grade. If unsure between two grades, choose the HIGHER one.
 
-CRITICAL PRICING RULES — Use REAL eBay/dealer market prices:
-- For US Washington Quarters (clad, 1965+):
-  * VF-20 to EF-40: $5 - $15
-  * AU-50 to AU-58: $15 - $35
-  * MS-60 to MS-63: $25 - $60
-  * MS-64 to MS-65: $40 - $100
-  * MS-66+: $80 - $300+
-- For US Washington Quarters (silver, pre-1965):
-  * VF-20: $8 - $15 (silver value + premium)
-  * EF-40: $12 - $25
-  * AU-50+: $20 - $50
-  * MS-63+: $40 - $150+
-- Price should MATCH the grade you assign
-- If coin looks clean and lustrous, it's probably AU or MS grade = higher price
-- Check eBay sold listings mentally for this exact coin type and grade
+CRITICAL PRICING RULES — Use REAL eBay SOLD listing prices (NOT face value!):
+- IMPORTANT: Collectors pay MUCH MORE than face value for coins in good condition
+- Check eBay sold listings for THIS EXACT coin type, year, and condition
+
+For US Washington Quarters (clad, 1965-present):
+  * AG-3 to G-6 (heavily worn): $1 - $3
+  * VG-8 to F-12 (moderate wear): $3 - $8
+  * VF-20 to VF-35 (light wear): $8 - $20
+  * EF-40 to EF-45 (minimal wear): $15 - $35
+  * AU-50 to AU-58 (about uncirculated): $25 - $50
+  * MS-60 to MS-63 (uncirculated): $35 - $75
+  * MS-64 to MS-65 (choice/gem): $50 - $150
+  * MS-66+: $100 - $400+
+
+For US Washington Quarters (silver, pre-1965):
+  * VF-20 to EF-40: $10 - $30 (silver melt + numismatic premium)
+  * AU-50 to AU-58: $25 - $60
+  * MS-60 to MS-63: $40 - $100
+  * MS-64+: $80 - $250+
+
+PRICING RULES:
+- NEVER price a clean, lustrous coin under $15
+- If coin shows ANY luster/shine = AU or MS grade = $25+ minimum
+- Common date doesn't mean low price - condition matters most
+- When in doubt, price HIGHER not lower
+- eBay collectors pay premium prices for nice looking coins
 
 Other rules:
 - year_start and year_end: if this is a single year coin, set both to the same value

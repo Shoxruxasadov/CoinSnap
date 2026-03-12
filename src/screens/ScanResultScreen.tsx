@@ -897,19 +897,19 @@ export default function ScanResultScreen() {
                 <View>
                   <View style={styles.dimRow}>
                     <Text style={styles.dimLabel}>Weight:</Text>
-                    <Text style={styles.dimValue}>
+                    <Text style={[styles.dimValue, {color: colors.text.textBase}]}>
                       {coin.weight_grams ? `${coin.weight_grams} grams` : "-"}
                     </Text>
                   </View>
                   <View style={styles.dimRow}>
                     <Text style={styles.dimLabel}>Diameter:</Text>
-                    <Text style={styles.dimValue}>
+                    <Text style={[styles.dimValue, {color: colors.text.textBase}]}>
                       {coin.diameter_mm ? `${coin.diameter_mm} mm` : "-"}
                     </Text>
                   </View>
                   <View style={styles.dimRow}>
                     <Text style={styles.dimLabel}>Thickness:</Text>
-                    <Text style={styles.dimValue}>
+                    <Text style={[styles.dimValue, {color: colors.text.textBase}]}>
                       {coin.thickness_mm ? `~${coin.thickness_mm} mm` : "-"}
                     </Text>
                   </View>

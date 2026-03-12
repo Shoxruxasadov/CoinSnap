@@ -26,74 +26,167 @@ async function tryReplicate(
   apiToken: string
 ): Promise<Uint8Array | null> {
   try {
-    // Create prediction
+    console.log("Replicate: Starting request");
+    
+    // Use lucataco/remove-bg model - more reliable
     const createRes = await fetch("https://api.replicate.com/v1/predictions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${apiToken}`,
+        Authorization: `Token ${apiToken}`,
         "Content-Type": "application/json",
-        Prefer: "wait",
       },
       body: JSON.stringify({
-        version: "fb8af171cfa1616ddcf1242c093f9c46bcada5ad4cf6f2fbe8b81b330ec5c003",
+        version: "95fcc2a26d3899cd6c2691c900465aaeff466285a65c14638cc5f36f34befaf1",
         input: {
           image: `data:image/jpeg;base64,${imageBase64}`,
         },
       }),
     });
 
+    console.log("Replicate: Response status:", createRes.status);
+
     if (!createRes.ok) {
-      console.error("Replicate create error:", createRes.status, await createRes.text());
+      const errorText = await createRes.text();
+      console.error("Replicate create error:", createRes.status, errorText);
       return null;
     }
 
     const prediction = await createRes.json();
-    console.log("Replicate prediction status:", prediction.status);
+    console.log("Replicate prediction:", prediction.id, prediction.status);
 
-    // If completed immediately (Prefer: wait)
-    if (prediction.status === "succeeded" && prediction.output) {
-      const outputUrl = prediction.output;
-      const imgRes = await fetch(outputUrl);
-      if (!imgRes.ok) {
-        console.error("Replicate download error:", imgRes.status);
+    // Poll for result
+    const getUrl = prediction.urls?.get || `https://api.replicate.com/v1/predictions/${prediction.id}`;
+    
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      
+      const pollRes = await fetch(getUrl, {
+        headers: { Authorization: `Token ${apiToken}` },
+      });
+      
+      if (!pollRes.ok) {
+        console.log("Replicate poll error:", pollRes.status);
+        continue;
+      }
+      
+      const result = await pollRes.json();
+      
+      if (result.status === "succeeded" && result.output) {
+        console.log("Replicate succeeded, downloading output");
+        const imgRes = await fetch(result.output);
+        if (imgRes.ok) {
+          return new Uint8Array(await imgRes.arrayBuffer());
+        }
+      }
+      
+      if (result.status === "failed" || result.status === "canceled") {
+        console.error("Replicate failed:", result.error);
         return null;
       }
-      return new Uint8Array(await imgRes.arrayBuffer());
-    }
-
-    // Poll for result if not ready
-    if (prediction.status === "processing" || prediction.status === "starting") {
-      const getUrl = prediction.urls?.get || `https://api.replicate.com/v1/predictions/${prediction.id}`;
       
-      for (let i = 0; i < 30; i++) {
-        await new Promise((r) => setTimeout(r, 2000));
-        
-        const pollRes = await fetch(getUrl, {
-          headers: { Authorization: `Bearer ${apiToken}` },
-        });
-        
-        if (!pollRes.ok) continue;
-        
-        const result = await pollRes.json();
-        console.log("Replicate poll status:", result.status);
-        
-        if (result.status === "succeeded" && result.output) {
-          const imgRes = await fetch(result.output);
-          if (imgRes.ok) {
-            return new Uint8Array(await imgRes.arrayBuffer());
-          }
-        }
-        
-        if (result.status === "failed" || result.status === "canceled") {
-          console.error("Replicate failed:", result.error);
-          return null;
-        }
+      if (result.status === "starting" || result.status === "processing") {
+        continue;
       }
     }
 
+    console.error("Replicate timeout");
     return null;
   } catch (e) {
-    console.error("Replicate exception:", e);
+    console.error("Replicate exception:", e instanceof Error ? e.message : String(e));
+    return null;
+  }
+}
+
+async function tryRembgCom(
+  binaryData: Uint8Array
+): Promise<Uint8Array | null> {
+  try {
+    console.log("rembg.com: Starting request");
+    
+    const blob = new Blob([binaryData], { type: "image/jpeg" });
+    const form = new FormData();
+    form.append("file", blob, "image.jpg");
+
+    const res = await fetch("https://api.rembg.com/api/rembg", {
+      method: "POST",
+      body: form,
+    });
+
+    console.log("rembg.com: Response status:", res.status);
+
+    if (!res.ok) {
+      console.error("rembg.com error:", res.status, await res.text());
+      return null;
+    }
+
+    return new Uint8Array(await res.arrayBuffer());
+  } catch (e) {
+    console.error("rembg.com exception:", e instanceof Error ? e.message : String(e));
+    return null;
+  }
+}
+
+async function tryPhotoRoom(
+  binaryData: Uint8Array
+): Promise<Uint8Array | null> {
+  try {
+    console.log("PhotoRoom: Starting request");
+    
+    const blob = new Blob([binaryData], { type: "image/jpeg" });
+    const form = new FormData();
+    form.append("image_file", blob, "image.jpg");
+
+    // PhotoRoom free sandbox API
+    const res = await fetch("https://sdk.photoroom.com/v1/segment", {
+      method: "POST",
+      headers: {
+        "x-api-key": "sandbox_placeholder", // Free sandbox
+      },
+      body: form,
+    });
+
+    console.log("PhotoRoom: Response status:", res.status);
+
+    if (!res.ok) {
+      console.error("PhotoRoom error:", res.status);
+      return null;
+    }
+
+    return new Uint8Array(await res.arrayBuffer());
+  } catch (e) {
+    console.error("PhotoRoom exception:", e instanceof Error ? e.message : String(e));
+    return null;
+  }
+}
+
+async function tryClipDrop(
+  binaryData: Uint8Array,
+  apiKey: string
+): Promise<Uint8Array | null> {
+  try {
+    console.log("ClipDrop: Starting request");
+    
+    const blob = new Blob([binaryData], { type: "image/jpeg" });
+    const form = new FormData();
+    form.append("image_file", blob, "coin.jpg");
+
+    const res = await fetch("https://clipdrop-api.co/remove-background/v1", {
+      method: "POST",
+      headers: { "x-api-key": apiKey },
+      body: form,
+    });
+
+    console.log("ClipDrop: Response status:", res.status);
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error("ClipDrop error:", res.status, errorText);
+      return null;
+    }
+
+    return new Uint8Array(await res.arrayBuffer());
+  } catch (e) {
+    console.error("ClipDrop exception:", e instanceof Error ? e.message : String(e));
     return null;
   }
 }
@@ -144,30 +237,58 @@ Deno.serve(async (req: Request) => {
     }
 
     const binaryData = fromBase64(imageBase64);
+    const clipDropKey = Deno.env.get("CLIPDROP_API_KEY");
     const replicateToken = Deno.env.get("REPLICATE_API_TOKEN");
     const removeBgKey = Deno.env.get("REMOVEBG_API_KEY");
 
     let resultBytes: Uint8Array | null = null;
 
     console.log("Keys available:", {
+      hasClipDropKey: !!clipDropKey,
       hasReplicateToken: !!replicateToken,
       hasRemoveBgKey: !!removeBgKey,
       imageSize: `${binaryData.length} bytes`,
     });
 
-    // 1) Replicate rembg model (free tier: ~50 predictions/month)
-    if (replicateToken) {
-      console.log("Trying Replicate rembg...");
+    // 1) rembg.com (FREE - no API key needed!)
+    console.log("Trying rembg.com...");
+    resultBytes = await tryRembgCom(binaryData);
+    console.log(
+      "rembg.com result:",
+      resultBytes ? `${resultBytes.length} bytes` : "null"
+    );
+
+    // 2) PhotoRoom sandbox (FREE)
+    if (!resultBytes) {
+      console.log("Trying PhotoRoom...");
+      resultBytes = await tryPhotoRoom(binaryData);
+      console.log(
+        "PhotoRoom result:",
+        resultBytes ? `${resultBytes.length} bytes` : "null"
+      );
+    }
+
+    // 3) Fallback: ClipDrop
+    if (!resultBytes && clipDropKey) {
+      console.log("Trying ClipDrop...");
+      resultBytes = await tryClipDrop(binaryData, clipDropKey);
+      console.log(
+        "ClipDrop result:",
+        resultBytes ? `${resultBytes.length} bytes` : "null"
+      );
+    }
+
+    // 4) Fallback: Replicate
+    if (!resultBytes && replicateToken) {
+      console.log("Trying Replicate...");
       resultBytes = await tryReplicate(imageBase64, replicateToken);
       console.log(
         "Replicate result:",
         resultBytes ? `${resultBytes.length} bytes` : "null"
       );
-    } else {
-      console.warn("REPLICATE_API_TOKEN not set");
     }
 
-    // 2) Fallback: remove.bg
+    // 5) Fallback: remove.bg
     if (!resultBytes && removeBgKey) {
       console.log("Trying remove.bg...");
       resultBytes = await tryRemoveBg(binaryData, removeBgKey);

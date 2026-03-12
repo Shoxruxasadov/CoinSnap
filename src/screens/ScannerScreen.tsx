@@ -34,6 +34,7 @@ import PagerView from 'react-native-pager-view';
 import { triggerSelection, triggerImpact } from '../lib/haptics';
 import { analyzeCoinInApp } from '../lib/analyzeCoin';
 import { processCoinImage } from '../lib/processCoinImage';
+import CoinObserveSvg from '../../assets/guide/coin-observe.svg';
 
 type Nav = NativeStackNavigationProp<MainStackParamList>;
 
@@ -574,19 +575,19 @@ export default function ScannerScreen() {
 
   const currentAnalysis = ANALYSIS_STEPS[analysisStepIndex] || ANALYSIS_STEPS[0];
 
+  // Permission is now requested before navigation from MainTabs
+  // If somehow we get here without permission, go back
+  useEffect(() => {
+    if (permission && !permission.granted) {
+      navigation.goBack();
+    }
+  }, [permission, navigation]);
+
+  // Show nothing while checking permission or if not granted
   if (!permission?.granted) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={styles.container}>
         <StatusBar style="light" />
-        <View style={styles.permissionContainer}>
-          <Text style={styles.permissionText}>Camera permission is required to scan coins</Text>
-          <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission}>
-            <Text style={styles.permissionBtnText}>Grant Permission</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.permissionBtn, { marginTop: 12, backgroundColor: '#333' }]} onPress={handleClose}>
-            <Text style={styles.permissionBtnText}>Go Back</Text>
-          </TouchableOpacity>
-        </View>
       </View>
     );
   }
@@ -683,7 +684,7 @@ export default function ScannerScreen() {
             </View>
           ) : (
             <View style={[styles.thumbnailPlaceholder, step === 1 && styles.thumbnailPlaceholderActive]}>
-              <Text style={styles.thumbnailPlaceholderText}>1</Text>
+              <CoinObserveSvg width={28} height={24} style={{marginTop: 2}} />
             </View>
           )}
           <Text style={styles.thumbnailLabel}>Observe</Text>
@@ -700,7 +701,7 @@ export default function ScannerScreen() {
             </View>
           ) : (
             <View style={[styles.thumbnailPlaceholder, step === 2 && styles.thumbnailPlaceholderActive]}>
-              <Text style={styles.thumbnailPlaceholderText}>2</Text>
+              <Text style={styles.thumbnailPlaceholderText}>1</Text>
             </View>
           )}
           <Text style={styles.thumbnailLabel}>Reverse</Text>
