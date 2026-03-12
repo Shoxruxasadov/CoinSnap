@@ -35,9 +35,9 @@ export function formatPrice(
   const code = (currencyCode as CurrencyCode) || 'USD';
   const currency = CURRENCIES[code] || CURRENCIES.USD;
   const converted = amountUSD * currency.rate;
-  const decimals = options?.decimals ?? (currency.rate >= 10 ? 0 : 2);
+  const decimals = options?.decimals ?? 0;
   
-  return `${currency.symbol}${converted.toFixed(decimals)}`;
+  return `${currency.symbol}${Math.round(converted)}`;
 }
 
 export function formatPriceRange(
@@ -49,22 +49,21 @@ export function formatPriceRange(
   
   const code = (currencyCode as CurrencyCode) || 'USD';
   const currency = CURRENCIES[code] || CURRENCIES.USD;
-  const decimals = currency.rate >= 10 ? 0 : 2;
   
   if (minUSD != null && maxUSD != null) {
-    const minConverted = minUSD * currency.rate;
-    const maxConverted = maxUSD * currency.rate;
-    return `${currency.symbol}${minConverted.toFixed(decimals)} - ${currency.symbol}${maxConverted.toFixed(decimals)}`;
+    const minConverted = Math.round(minUSD * currency.rate);
+    const maxConverted = Math.round(maxUSD * currency.rate);
+    return `${currency.symbol}${minConverted} - ${currency.symbol}${maxConverted}`;
   }
   
   if (minUSD != null) {
-    const converted = minUSD * currency.rate;
-    return `${currency.symbol}${converted.toFixed(decimals)}`;
+    const converted = Math.round(minUSD * currency.rate);
+    return `${currency.symbol}${converted}`;
   }
   
   if (maxUSD != null) {
-    const converted = maxUSD * currency.rate;
-    return `${currency.symbol}${converted.toFixed(decimals)}`;
+    const converted = Math.round(maxUSD * currency.rate);
+    return `${currency.symbol}${converted}`;
   }
   
   return '-';

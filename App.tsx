@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme, View, Text, StyleSheet } from 'react-native';
+import { useColorScheme, View, Text, StyleSheet, Animated } from 'react-native';
 import { useFonts } from '@expo-google-fonts/inter/useFonts';
 import { useSettingsStore } from './src/store/settingsStore';
 import {
@@ -14,7 +14,7 @@ import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TamaguiProvider } from 'tamagui';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import Toast, { BaseToastProps } from 'react-native-toast-message';
 import { Check } from 'lucide-react-native';
 import { useAuthStore } from './src/store/authStore';
@@ -22,15 +22,29 @@ import { useSupabaseSession } from './src/lib/useSupabaseSession';
 import RootStack from './src/navigation/RootStack';
 import tamaguiConfig from './tamagui.config';
 
-const toastConfig = {
-  success: ({ text1 }: BaseToastProps) => (
-    <View style={toastStyles.container}>
+const FadeToast = ({ text1 }: { text1?: string }) => {
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(opacity, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+  return (
+    <Animated.View style={[toastStyles.container, { opacity }]}>
       <View style={toastStyles.iconWrap}>
         <Check size={20} color="#fff" strokeWidth={3} />
       </View>
       <Text style={toastStyles.text}>{text1}</Text>
-    </View>
-  ),
+    </Animated.View>
+  );
+};
+
+const toastConfig = {
+  success: ({ text1 }: BaseToastProps) => <FadeToast text1={text1} />,
 };
 
 const toastStyles = StyleSheet.create({
@@ -76,6 +90,9 @@ export default function App() {
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
+    'SFCompactRounded-Heavy': require('./assets/font/SF-Compact-Rounded-Heavy.ttf'),
+    'SFCompactRounded-Bold': require('./assets/font/SF-Compact-Rounded-Bold.ttf'),
+    'SFCompactRounded-Semibold': require('./assets/font/SF-Compact-Rounded-Semibold.ttf'),
   });
 
   useEffect(() => {

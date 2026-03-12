@@ -11,7 +11,6 @@ import {
   TouchableOpacity,
   View,
   ScrollView,
-  Image,
   Dimensions,
   Alert,
   TextInput,
@@ -21,7 +20,7 @@ import {
   LayoutChangeEvent,
   Linking,
 } from "react-native";
-import Animated from "react-native-reanimated";
+import { Image } from "expo-image";
 import {
   ChevronLeft,
   MoreHorizontal,
@@ -64,7 +63,7 @@ import CoinIllustration from "../../assets/home/coin.svg";
 type Nav = NativeStackNavigationProp<MainStackParamList>;
 type Route = RouteProp<MainStackParamList, "ScanResult">;
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 type CoinData = {
   id: number;
@@ -297,6 +296,8 @@ export default function ScanResultScreen() {
     collections.forEach((c) => (c.coin_ids ?? []).forEach((id) => ids.add(id)));
     return Array.from(ids);
   }, [collections]);
+
+  const addToMaxHeight = SCREEN_HEIGHT * 0.8;
 
   const fetchCollections = useCallback(async () => {
     if (!userId) return;
@@ -675,11 +676,12 @@ export default function ScanResultScreen() {
                   { backgroundColor: colors.surface.surfaceElevatedExtra },
                 ]}
               >
-                <Animated.Image
+                <Image
                   source={{ uri: coin.front_image_url }}
                   style={styles.coinImage}
-                  resizeMode="contain"
-                  sharedTransitionTag={`coin-front-${coin.id}`}
+                  contentFit="contain"
+                  cachePolicy="disk"
+                  transition={200}
                 />
               </View>
             )}
@@ -690,11 +692,12 @@ export default function ScanResultScreen() {
                   { backgroundColor: colors.surface.surfaceElevatedExtra },
                 ]}
               >
-                <Animated.Image
+                <Image
                   source={{ uri: coin.back_image_url }}
                   style={styles.coinImage}
-                  resizeMode="contain"
-                  sharedTransitionTag={`coin-back-${coin.id}`}
+                  contentFit="contain"
+                  cachePolicy="disk"
+                  transition={200}
                 />
               </View>
             )}
@@ -1175,8 +1178,10 @@ export default function ScanResultScreen() {
       <BottomSheet
         ref={addToSheetRef}
         index={-1}
-        snapPoints={["60%"]}
+        enableDynamicSizing
+        maxDynamicContentSize={addToMaxHeight}
         enablePanDownToClose
+        enableOverDrag={false}
         backdropComponent={renderBackdrop}
         backgroundStyle={{
           backgroundColor: colors.surface.onBgBase,
@@ -1188,7 +1193,7 @@ export default function ScanResultScreen() {
           width: 40,
         }}
       >
-        <BottomSheetView style={sheetStyles.container}>
+        <BottomSheetView>
           <View style={sheetStyles.headerRow}>
             <Text style={[sheetStyles.title, { color: colors.text.textBase }]}>
               {coinInCollection ? "Change collection" : "Add to"}
@@ -1211,7 +1216,7 @@ export default function ScanResultScreen() {
             />
           ) : (
             <BottomSheetScrollView
-              style={{ flex: 1 }}
+              style={{ maxHeight: SCREEN_HEIGHT * 0.55 }}
               contentContainerStyle={sheetStyles.scrollContent}
             >
               {collections.map((col) => {
@@ -1252,21 +1257,49 @@ export default function ScanResultScreen() {
                       </Text>
                     </View>
                     <View style={sheetStyles.collectionCoins}>
-                      {coinImages.map((c, idx) => (
-                        <Image
-                          key={c.id}
-                          source={{
-                            uri: c.front_image_url || c.back_image_url || "",
-                          }}
-                          style={[
-                            sheetStyles.collectionCoinImg,
-                            {
-                              marginLeft: idx > 0 ? -12 : 0,
-                              borderColor: colors.surface.onBgBase,
-                            },
-                          ]}
-                        />
-                      ))}
+                      {(() => {
+                        const placeholder = (key: string, ml: boolean) => (
+                          <View
+                            key={key}
+                            style={[
+                              sheetStyles.collectionCoinImg,
+                              {
+                                marginLeft: ml ? -12 : 0,
+                                borderColor: colors.surface.onBgBase,
+                                backgroundColor: colors.border.border3,
+                              },
+                            ]}
+                          />
+                        );
+
+                        if (coinImages.length === 0) {
+                          return [placeholder('p0', false), placeholder('p1', true), placeholder('p2', true), placeholder('p3', true)];
+                        }
+
+                        const els: React.ReactNode[] = [];
+                        const last2 = coinImages.slice(-2);
+                        last2.forEach((c) => {
+                          const ml = els.length > 0;
+                          if (c.front_image_url) {
+                            els.push(
+                              <Image key={`${c.id}-f`} source={{ uri: c.front_image_url }} style={[sheetStyles.collectionCoinImg, { marginLeft: ml ? -12 : 0, borderColor: colors.surface.onBgBase }]} cachePolicy="disk" />
+                            );
+                          } else {
+                            els.push(placeholder(`${c.id}-fp`, ml));
+                          }
+                          if (c.back_image_url) {
+                            els.push(
+                              <Image key={`${c.id}-b`} source={{ uri: c.back_image_url }} style={[sheetStyles.collectionCoinImg, { marginLeft: -12, borderColor: colors.surface.onBgBase }]} cachePolicy="disk" />
+                            );
+                          } else {
+                            els.push(placeholder(`${c.id}-bp`, true));
+                          }
+                        });
+                        while (els.length < 4) {
+                          els.push(placeholder(`p${els.length}`, els.length > 0));
+                        }
+                        return els.slice(0, 4);
+                      })()}
                     </View>
                   </TouchableOpacity>
                 );
@@ -1323,6 +1356,7 @@ export default function ScanResultScreen() {
                 backgroundColor: selectedCollectionId
                   ? colors.background.bgInverse
                   : colors.border.border3,
+                marginBottom: 16,
               },
             ]}
             onPress={handleConfirmAddToCollection}
@@ -1821,7 +1855,6 @@ const sheetStyles = StyleSheet.create({
     alignItems: "center",
     marginHorizontal: 24,
     marginTop: 18,
-    marginBottom: 20,
   },
   confirmBtnText: {
     fontSize: 17,

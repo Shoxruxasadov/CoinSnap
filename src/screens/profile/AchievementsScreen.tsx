@@ -48,6 +48,16 @@ const activeImages: Record<string, any> = {
   collector10: require('../../../assets/achievements/collector10.png'),
 };
 
+const nonActiveImages: Record<string, any> = {
+  streak3: require('../../../assets/achievements-nonactive/streak3.png'),
+  streak7: require('../../../assets/achievements-nonactive/streak7.png'),
+  streak14: require('../../../assets/achievements-nonactive/streak14.png'),
+  streak30: require('../../../assets/achievements-nonactive/streak30.png'),
+  streak60: require('../../../assets/achievements-nonactive/streak60.png'),
+  streak100: require('../../../assets/achievements-nonactive/streak100.png'),
+  collector10: require('../../../assets/achievements-nonactive/collector10.png'),
+};
+
 type SelectedBadge = { id: string; name: string; dialogDesc: string; active: boolean } | null;
 
 export default function AchievementsScreen() {
@@ -188,14 +198,11 @@ export default function AchievementsScreen() {
                 onPress={() => openDialog(badge, active)}
                 activeOpacity={0.8}
               >
-                <View style={styles.badgeImageWrap}>
-                  <Image
-                    source={activeImages[badge.id]}
-                    style={[styles.badgeImage, { opacity: active ? 1 : 0.6 }]}
-                    resizeMode="contain"
-                  />
-                  {!active && <View style={styles.grayscaleOverlay} />}
-                </View>
+                <Image
+                  source={active ? activeImages[badge.id] : nonActiveImages[badge.id]}
+                  style={styles.badgeImage}
+                  resizeMode="contain"
+                />
                 <Text style={[styles.badgeName, { color: colors.text.textBase }]}>{badge.name}</Text>
                 <Text style={[styles.badgeDesc, { color: colors.text.textTertiary }]}>{badge.desc}</Text>
               </TouchableOpacity>
@@ -214,14 +221,11 @@ export default function AchievementsScreen() {
                 onPress={() => openDialog(badge, active)}
                 activeOpacity={0.8}
               >
-                <View style={styles.badgeImageWrap}>
-                  <Image
-                    source={activeImages[badge.id]}
-                    style={[styles.badgeImage, { opacity: active ? 1 : 0.6 }]}
-                    resizeMode="contain"
-                  />
-                  {!active && <View style={styles.grayscaleOverlay} />}
-                </View>
+                <Image
+                  source={active ? activeImages[badge.id] : nonActiveImages[badge.id]}
+                  style={styles.badgeImage}
+                  resizeMode="contain"
+                />
                 <Text style={[styles.badgeName, { color: colors.text.textBase }]}>{badge.name}</Text>
                 <Text style={[styles.badgeDesc, { color: colors.text.textTertiary }]}>{badge.desc}</Text>
               </TouchableOpacity>
@@ -256,14 +260,11 @@ export default function AchievementsScreen() {
             >
               {selectedBadge && (
                 <>
-                <View style={styles.dialogBadgeImageWrap}>
                   <Image
                     source={activeImages[selectedBadge.id]}
-                    style={[styles.dialogBadgeImage, { opacity: selectedBadge.active ? 1 : 0.6 }]}
+                    style={styles.dialogBadgeImage}
                     resizeMode="contain"
                   />
-                  {!selectedBadge.active && <View style={styles.dialogGrayscaleOverlay} />}
-                </View>
                   <Text style={[styles.dialogTitle, { color: colors.text.textBase }]}>{selectedBadge.name}</Text>
                   <Text style={[styles.dialogDesc, { color: colors.text.textTertiary }]}>
                     {selectedBadge.dialogDesc}
@@ -333,19 +334,10 @@ const styles = StyleSheet.create({
     width: BADGE_SIZE,
     alignItems: 'center',
   },
-  badgeImageWrap: {
+  badgeImage: {
     width: BADGE_SIZE - 16,
     height: BADGE_SIZE - 16,
     marginBottom: 8,
-    position: 'relative',
-  },
-  badgeImage: {
-    width: '100%',
-    height: '100%',
-  },
-  grayscaleOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(128,128,128,0.55)',
   },
   badgeName: {
     fontSize: 14,
@@ -373,19 +365,10 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     alignItems: 'center',
   },
-  dialogBadgeImageWrap: {
+  dialogBadgeImage: {
     width: 120,
     height: 120,
     marginBottom: 16,
-    position: 'relative',
-  },
-  dialogBadgeImage: {
-    width: '100%',
-    height: '100%',
-  },
-  dialogGrayscaleOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(128,128,128,0.55)',
   },
   dialogTitle: {
     fontSize: 22,

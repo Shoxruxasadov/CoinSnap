@@ -5,13 +5,12 @@ import {
   TouchableOpacity,
   View,
   ScrollView,
-  Image,
   ActivityIndicator,
   Dimensions,
   Alert,
   TextInput,
 } from 'react-native';
-import Animated from 'react-native-reanimated';
+import { Image } from 'expo-image';
 import { ChevronLeft, LayoutGrid, List, MoreHorizontal, MoreVertical, Pencil, Trash2, FolderPlus, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
@@ -101,21 +100,23 @@ function CoinRowList({
       <View style={[styles.coinImagesWrap, { backgroundColor: colors.surface.surface }]}>
         {hasFront && (
           <View style={[styles.coinImageBack, { borderColor: colors.surface.surface }]}>
-            <Animated.Image
+            <Image
               source={{ uri: item.front_image_url! }}
               style={styles.coinCircleImage}
-              resizeMode="cover"
-              sharedTransitionTag={`coin-front-${item.id}`}
+              contentFit="cover"
+              cachePolicy="disk"
+              transition={150}
             />
           </View>
         )}
         {hasBack && (
           <View style={[styles.coinImageFront, { borderColor: colors.surface.surface }]}>
-            <Animated.Image
+            <Image
               source={{ uri: item.back_image_url! }}
               style={styles.coinCircleImage}
-              resizeMode="cover"
-              sharedTransitionTag={`coin-back-${item.id}`}
+              contentFit="cover"
+              cachePolicy="disk"
+              transition={150}
             />
           </View>
         )}
@@ -166,19 +167,21 @@ function CoinCardGrid({
         {(hasFront || hasBack) ? (
           <View style={styles.coinCardGridCoins}>
             {hasFront && (
-              <Animated.Image
+              <Image
                 source={{ uri: item.front_image_url! }}
                 style={styles.coinCardGridCoinImg}
-                resizeMode="contain"
-                sharedTransitionTag={`coin-front-${item.id}`}
+                contentFit="contain"
+                cachePolicy="disk"
+                transition={150}
               />
             )}
             {hasBack && (
-              <Animated.Image
+              <Image
                 source={{ uri: item.back_image_url! }}
                 style={[styles.coinCardGridCoinImg, hasFront && { marginLeft: -20 }]}
-                resizeMode="contain"
-                sharedTransitionTag={`coin-back-${item.id}`}
+                contentFit="contain"
+                cachePolicy="disk"
+                transition={150}
               />
             )}
           </View>

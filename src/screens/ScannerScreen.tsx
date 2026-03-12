@@ -10,7 +10,6 @@ import {
   Dimensions,
   Alert,
   ActivityIndicator,
-  Platform,
   PanResponder,
   GestureResponderEvent,
   LayoutChangeEvent,
@@ -69,14 +68,14 @@ const CIRCLE_CENTER_Y = CIRCLE_TOP + CIRCLE_SIZE / 2;
 
 
 const ANALYSIS_STEPS = [
-  { percent: 20, label: 'Removing background', seconds: 8 },
-  { percent: 40, label: 'Uploading images', seconds: 4 },
-  { percent: 55, label: 'Analyzing coin', seconds: 10 },
-  { percent: 70, label: 'Identifying details', seconds: 8 },
-  { percent: 80, label: 'Checking market', seconds: 6 },
-  { percent: 90, label: 'Generating report', seconds: 5 },
-  { percent: 95, label: 'Finalizing', seconds: 3 },
-  { percent: 100, label: 'Almost done', seconds: 1 },
+  { percent: 20, label: 'Removing background' },
+  { percent: 40, label: 'Uploading images' },
+  { percent: 55, label: 'Analyzing coin' },
+  { percent: 70, label: 'Identifying details' },
+  { percent: 80, label: 'Checking market' },
+  { percent: 95, label: 'Generating report' },
+  { percent: 100, label: 'Finalizing' },
+  { percent: 100, label: 'Almost done' },
 ];
 
 const DIGIT_HEIGHT = 56;
@@ -84,26 +83,34 @@ const SMALL_DIGIT_HEIGHT = 22;
 
 const AnimatedDigit = React.memo(({ digit, small }: { digit: string; small?: boolean }) => {
   const h = small ? SMALL_DIGIT_HEIGHT : DIGIT_HEIGHT;
-  const animY = useRef(new Animated.Value(-h)).current;
+  const animOpacity = useRef(new Animated.Value(1)).current;
+  const [displayDigit, setDisplayDigit] = useState(digit);
   const prevDigit = useRef<string | null>(null);
 
   useEffect(() => {
-    if (prevDigit.current !== digit) {
-      prevDigit.current = digit;
-      animY.setValue(-h);
-      Animated.spring(animY, {
+    if (prevDigit.current !== null && prevDigit.current !== digit) {
+      Animated.timing(animOpacity, {
         toValue: 0,
+        duration: 70,
         useNativeDriver: true,
-        tension: 100,
-        friction: 12,
-      }).start();
+      }).start(() => {
+        setDisplayDigit(digit);
+        Animated.timing(animOpacity, {
+          toValue: 1,
+          duration: 70,
+          useNativeDriver: true,
+        }).start();
+      });
+    } else {
+      setDisplayDigit(digit);
     }
+    prevDigit.current = digit;
   }, [digit]);
 
   return (
     <View style={[digitStyles.slot, { height: h }]}>
-      <Animated.Text style={[small ? digitStyles.smallText : digitStyles.text, { transform: [{ translateY: animY }] }]}>
-        {digit}
+      <Animated.Text style={[small ? digitStyles.smallText : digitStyles.text, { opacity: animOpacity }]}>
+        {displayDigit}
       </Animated.Text>
     </View>
   );
@@ -118,20 +125,12 @@ const digitStyles = StyleSheet.create({
   text: {
     color: '#fff',
     fontSize: 48,
-    fontWeight: '800',
-    fontFamily: Platform.select({
-      ios: 'SF Compact Rounded',
-      default: undefined,
-    }),
+    fontFamily: 'SFCompactRounded-Heavy',
   },
   smallText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '700',
-    fontFamily: Platform.select({
-      ios: 'SF Compact Rounded',
-      default: undefined,
-    }),
+    fontFamily: 'SFCompactRounded-Bold',
   },
 });
 
@@ -213,11 +212,10 @@ export default function ScannerScreen() {
   const displayZoom = (0.5 + zoom * 14.5).toFixed(1);
 
   const progressAnim = useRef(new Animated.Value(0)).current;
+  const dashedSpinAnim = useRef(new Animated.Value(0)).current;
   const [displayPercent, setDisplayPercent] = useState(0);
   const displayPercentRef = useRef(0);
   const countTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [displaySeconds, setDisplaySeconds] = useState(0);
-  const secondsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!permission?.granted) {
@@ -228,6 +226,7 @@ export default function ScannerScreen() {
   useEffect(() => {
     if (!processing) {
       progressAnim.setValue(0);
+      dashedSpinAnim.setValue(0);
       return;
     }
     const target = (ANALYSIS_STEPS[analysisStepIndex]?.percent ?? 0) / 100;
@@ -237,6 +236,20 @@ export default function ScannerScreen() {
       useNativeDriver: false,
     }).start();
   }, [analysisStepIndex, processing]);
+
+  useEffect(() => {
+    if (!processing) return;
+    dashedSpinAnim.setValue(0);
+    const loop = Animated.loop(
+      Animated.timing(dashedSpinAnim, {
+        toValue: 1,
+        duration: 8000,
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [processing]);
 
   useEffect(() => {
     if (!processing) {
@@ -253,9 +266,9 @@ export default function ScannerScreen() {
     const start = displayPercentRef.current;
     if (start >= target) return;
 
-    const STEP = 5;
+    const STEP = 2;
     const steps = Math.ceil((target - start) / STEP);
-    const tickMs = Math.max(200, Math.floor(1800 / steps));
+    const tickMs = Math.max(100, Math.floor(2000 / steps));
     let current = start;
 
     if (countTimerRef.current) clearInterval(countTimerRef.current);
@@ -279,38 +292,7 @@ export default function ScannerScreen() {
     };
   }, [analysisStepIndex, processing]);
 
-  useEffect(() => {
-    if (!processing) {
-      setDisplaySeconds(0);
-      if (secondsTimerRef.current) {
-        clearInterval(secondsTimerRef.current);
-        secondsTimerRef.current = null;
-      }
-      return;
-    }
-
-    let current = currentAnalysis.seconds;
-    setDisplaySeconds(current);
-
-    if (secondsTimerRef.current) clearInterval(secondsTimerRef.current);
-
-    secondsTimerRef.current = setInterval(() => {
-      current--;
-      if (current <= 1) {
-        current = 1;
-        if (secondsTimerRef.current) clearInterval(secondsTimerRef.current);
-        secondsTimerRef.current = null;
-      }
-      setDisplaySeconds(current);
-    }, 1000);
-
-    return () => {
-      if (secondsTimerRef.current) {
-        clearInterval(secondsTimerRef.current);
-        secondsTimerRef.current = null;
-      }
-    };
-  }, [analysisStepIndex, processing]);
+  // Seconds counter removed
 
   const handleClose = () => {
     triggerSelection();
@@ -318,63 +300,88 @@ export default function ScannerScreen() {
   };
 
   const processImage = async (uri: string, fromCamera: boolean = false): Promise<string> => {
-    const { width: imgW, height: imgH } = await new Promise<{ width: number; height: number }>(
-      (resolve, reject) => {
-        Image.getSize(uri, (w, h) => resolve({ width: w, height: h }), reject);
-      },
-    );
+    try {
+      const { width: imgW, height: imgH } = await new Promise<{ width: number; height: number }>(
+        (resolve, reject) => {
+          Image.getSize(uri, (w, h) => resolve({ width: w, height: h }), reject);
+        },
+      );
 
-    const actions: ImageManipulator.Action[] = [];
+      const actions: ImageManipulator.Action[] = [];
 
-    if (fromCamera) {
-      // expo-image-manipulator respects EXIF orientation, so imgW/imgH
-      // are already in the correct portrait orientation for crop coordinates.
-      // CameraView uses aspect-fill (cover) to display the preview.
-      
-      const scaleX = imgW / SCREEN_WIDTH;
-      const scaleY = imgH / SCREEN_HEIGHT;
-      const scale = Math.min(scaleX, scaleY); // aspect-fill uses the smaller scale
-      
-      // Offset: centered overflow is cropped equally from both sides
-      const offsetX = (imgW - SCREEN_WIDTH * scale) / 2;
-      const offsetY = (imgH - SCREEN_HEIGHT * scale) / 2;
-      
-      // Map circle center & radius from screen to photo coordinates
-      const cx = offsetX + (SCREEN_WIDTH / 2) * scale;
-      const cy = offsetY + CIRCLE_CENTER_Y * scale;
-      const r = (CIRCLE_SIZE / 2) * scale;
-      
-      const cropSize = Math.round(r * 2);
-      const originX = Math.max(0, Math.min(Math.round(cx - r), imgW - cropSize));
-      const originY = Math.max(0, Math.min(Math.round(cy - r), imgH - cropSize));
-      
-      console.log('Crop debug:', { imgW, imgH, scale, cx, cy, r, originX, originY, cropSize });
+      if (fromCamera) {
+        // Swap dimensions if raw image is landscape but device is portrait (EXIF rotation)
+        let photoW = imgW;
+        let photoH = imgH;
+        if (imgW > imgH && SCREEN_HEIGHT > SCREEN_WIDTH) {
+          photoW = imgH;
+          photoH = imgW;
+        }
 
-      actions.push({ crop: { originX, originY, width: cropSize, height: cropSize } });
-      actions.push({ resize: { width: 1000 } });
-    } else {
-      const maxSize = 1200;
-      if (imgW > maxSize || imgH > maxSize) {
-        const s = Math.min(maxSize / imgW, maxSize / imgH);
-        actions.push({ resize: { width: Math.round(imgW * s), height: Math.round(imgH * s) } });
+        // CameraView aspect-fill: image fills screen, excess is clipped equally on both sides
+        // Scale factor: how many photo pixels = 1 screen pixel
+        const scaleX = photoW / SCREEN_WIDTH;
+        const scaleY = photoH / SCREEN_HEIGHT;
+        const scale = Math.min(scaleX, scaleY);
+
+        // Photo area that maps to visible screen
+        const visibleW = SCREEN_WIDTH * scale;
+        const visibleH = SCREEN_HEIGHT * scale;
+
+        // Offset from photo origin to visible area origin (centered)
+        const offsetX = (photoW - visibleW) / 2;
+        const offsetY = (photoH - visibleH) / 2;
+
+        // Circle center and radius in photo coordinates
+        const cx = offsetX + (SCREEN_WIDTH / 2) * scale;
+        const cy = offsetY + CIRCLE_CENTER_Y * scale;
+        const r = (CIRCLE_SIZE / 2) * scale;
+
+        // Crop square around circle
+        const cropSize = Math.round(r * 2);
+        const originX = Math.max(0, Math.min(Math.round(cx - r), photoW - cropSize));
+        const originY = Math.max(0, Math.min(Math.round(cy - r), photoH - cropSize));
+
+        console.log('Crop:', {
+          screen: { w: SCREEN_WIDTH, h: SCREEN_HEIGHT },
+          circleScreen: { cy: CIRCLE_CENTER_Y, size: CIRCLE_SIZE },
+          raw: { imgW, imgH },
+          photo: { photoW, photoH },
+          scale,
+          visible: { visibleW, visibleH },
+          offset: { offsetX, offsetY },
+          crop: { cx, cy, r, originX, originY, cropSize },
+        });
+
+        actions.push({ crop: { originX, originY, width: cropSize, height: cropSize } });
+        actions.push({ resize: { width: 1000 } });
+      } else {
+        const maxSize = 1200;
+        if (imgW > maxSize || imgH > maxSize) {
+          const s = Math.min(maxSize / imgW, maxSize / imgH);
+          actions.push({ resize: { width: Math.round(imgW * s), height: Math.round(imgH * s) } });
+        }
       }
+
+      if (actions.length === 0) return uri;
+
+      const result = await ImageManipulator.manipulateAsync(uri, actions, {
+        compress: 0.92,
+        format: ImageManipulator.SaveFormat.JPEG,
+      });
+      return result.uri;
+    } catch (err) {
+      console.error('processImage error:', err);
+      return uri;
     }
-
-    if (actions.length === 0) return uri;
-
-    const result = await ImageManipulator.manipulateAsync(uri, actions, {
-      compress: 0.92,
-      format: ImageManipulator.SaveFormat.JPEG,
-    });
-    return result.uri;
   };
 
   const uploadImage = async (uri: string, side: string): Promise<string | null> => {
     try {
       const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
       const folder = userId || 'anonymous';
-      const filename = `${folder}/${Date.now()}_${side}.jpg`;
-      const contentType = 'image/jpeg';
+      const filename = `${folder}/${Date.now()}_${side}.png`;
+      const contentType = 'image/png';
 
       const { data, error } = await supabase.storage
         .from('coin-scans')
@@ -397,18 +404,30 @@ export default function ScannerScreen() {
   };
 
   const handleCapture = async () => {
-    if (!cameraRef.current) return;
+    if (!cameraRef.current) {
+      console.error('Camera ref is null');
+      Alert.alert('Error', 'Camera is not ready. Please try again.');
+      return;
+    }
     triggerImpact();
 
     try {
+      console.log('Taking picture...');
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.85,
         skipProcessing: false,
       });
 
-      if (!photo?.uri) return;
+      console.log('Photo taken:', photo?.uri ? 'URI received' : 'No URI');
 
+      if (!photo?.uri) {
+        Alert.alert('Error', 'Failed to capture photo. Please try again.');
+        return;
+      }
+
+      console.log('Processing image...');
       const processed = await processImage(photo.uri, true);
+      console.log('Image processed:', processed);
 
       if (step === 1) {
         setFrontImage(processed);
@@ -551,7 +570,17 @@ export default function ScannerScreen() {
     } catch (err: any) {
       setProcessing(false);
       console.error('Processing error:', err);
-      Alert.alert('Error', err.message || 'Failed to analyze coin. Please try again.');
+
+      if (err.isUnknownCoin) {
+        Alert.alert(
+          'Unknown Coin',
+          'We could not identify this coin. Please make sure you are scanning a real coin and try again with clearer images.',
+          [{ text: 'Try Again', style: 'default' }],
+        );
+      } else {
+        Alert.alert('Error', err.message || 'Failed to analyze coin. Please try again.');
+      }
+
       setFrontImage(null);
       setBackImage(null);
       setStep(1);
@@ -751,11 +780,13 @@ export default function ScannerScreen() {
             <View style={styles.processingImages}>
               {frontImage && (
                 <View style={styles.processingImageWrap}>
+                  <Animated.View style={[styles.dashedBorder, { transform: [{ rotate: dashedSpinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }]} />
                   <Image source={{ uri: frontImage }} style={styles.processingImage} />
                 </View>
               )}
               {backImage && (
                 <View style={styles.processingImageWrap}>
+                  <Animated.View style={[styles.dashedBorder, { transform: [{ rotate: dashedSpinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }]} />
                   <Image source={{ uri: backImage }} style={styles.processingImage} />
                 </View>
               )}
@@ -778,12 +809,7 @@ export default function ScannerScreen() {
               <Text style={styles.processingLabel}>{currentAnalysis.label}</Text>
             </View>
 
-            <View style={styles.secondsRow}>
-              {String(displaySeconds).split('').map((d, i, arr) => (
-                <AnimatedDigit key={`s-${arr.length - 1 - i}`} digit={d} small />
-              ))}
-              <Text style={styles.processingTime}> second</Text>
-            </View>
+            
           </View>
         </View>
       )}
@@ -1104,15 +1130,22 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dashedBorder: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     borderWidth: 3,
     borderColor: '#DFAC4C',
     borderStyle: 'dashed',
-    overflow: 'hidden',
   },
   processingImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 60,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
   },
   percentContainer: {
     marginBottom: 16,
@@ -1125,11 +1158,7 @@ const styles = StyleSheet.create({
   percentSign: {
     color: '#fff',
     fontSize: 48,
-    fontWeight: '800',
-    fontFamily: Platform.select({
-      ios: 'SF Compact Rounded',
-      default: undefined,
-    }),
+    fontFamily: 'SFCompactRounded-Heavy',
   },
   progressBarBg: {
     width: '100%',
@@ -1154,27 +1183,8 @@ const styles = StyleSheet.create({
   processingLabel: {
     color: '#DFAC4C',
     fontSize: 15,
-    fontWeight: '600',
-    fontFamily: Platform.select({
-      ios: 'SF Compact Rounded',
-      default: undefined,
-    }),
+    fontFamily: 'SFCompactRounded-Semibold',
   },
-  secondsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  processingTime: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-    fontFamily: Platform.select({
-      ios: 'SF Compact Rounded',
-      default: undefined,
-    }),
-  },
-
   // Snap Guide modal
   modalOverlay: {
     flex: 1,

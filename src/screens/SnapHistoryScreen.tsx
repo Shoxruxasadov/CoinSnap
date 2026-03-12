@@ -7,7 +7,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import Animated from 'react-native-reanimated';
+import { Image } from 'expo-image';
 import { FlashList } from '@shopify/flash-list';
 import { ChevronLeft, MoreVertical, FolderPlus, Trash2, Plus, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -92,21 +92,23 @@ function CoinRow({
       <View style={[styles.coinImagesWrap, { backgroundColor: colors.surface.surface }]}>
         {hasFront && (
           <View style={[styles.coinImageBack, { borderColor: colors.surface.surface }]}>
-            <Animated.Image
+            <Image
               source={{ uri: item.front_image_url! }}
               style={styles.coinCircleImage}
-              resizeMode="cover"
-              sharedTransitionTag={`coin-front-${item.id}`}
+              contentFit="cover"
+              cachePolicy="disk"
+              transition={150}
             />
           </View>
         )}
         {hasBack && (
           <View style={[styles.coinImageFront, { borderColor: colors.surface.surface }]}>
-            <Animated.Image
+            <Image
               source={{ uri: item.back_image_url! }}
               style={styles.coinCircleImage}
-              resizeMode="cover"
-              sharedTransitionTag={`coin-back-${item.id}`}
+              contentFit="cover"
+              cachePolicy="disk"
+              transition={150}
             />
           </View>
         )}

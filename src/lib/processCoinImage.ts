@@ -3,7 +3,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { supabase } from './supabase';
 
-const TARGET_SIZE = 800;
+const TARGET_SIZE = 512;
 
 let cachedGeminiKey: string | null = null;
 
@@ -81,8 +81,8 @@ Return ONLY the JSON, no other text.`;
         const centerX = cx * imgW;
         const centerY = cy * imgH;
 
-        // Crop to a square around the coin with a small padding
-        const padding = radiusPx * 0.08;
+        // Crop to a square around the coin with comfortable padding
+        const padding = radiusPx * 0.45;
         const cropSize = Math.round((radiusPx + padding) * 2);
         const x = Math.max(0, Math.round(centerX - cropSize / 2));
         const y = Math.max(0, Math.round(centerY - cropSize / 2));
@@ -131,7 +131,6 @@ export async function processCoinImage(imageUri: string): Promise<{
     });
   } else {
     console.log('Coin not detected, using center crop');
-    // Fallback: center square crop
     if (imgW !== imgH) {
       const side = Math.min(imgW, imgH);
       const originX = Math.round((imgW - side) / 2);
@@ -148,12 +147,89 @@ export async function processCoinImage(imageUri: string): Promise<{
     { compress: 0.92, format: ImageManipulator.SaveFormat.PNG },
   );
 
-  const finalBase64 = await FileSystem.readAsStringAsync(result.uri, {
+  const bgRemovedUri = await removeBackground(result.uri);
+
+  let finalUri = bgRemovedUri || result.uri;
+
+  if (bgRemovedUri) {
+    const compressed = await ImageManipulator.manipulateAsync(
+      bgRemovedUri,
+      [{ resize: { width: TARGET_SIZE, height: TARGET_SIZE } }],
+      { compress: 0.85, format: ImageManipulator.SaveFormat.PNG },
+    );
+    finalUri = compressed.uri;
+  }
+
+  const finalBase64 = await FileSystem.readAsStringAsync(finalUri, {
     encoding: 'base64',
   });
 
   return {
-    processedUri: result.uri,
+    processedUri: finalUri,
     processedBase64: finalBase64,
   };
+}
+
+async function removeBackground(imageUri: string): Promise<string | null> {
+  try {
+    const apiKey = await getGeminiKey();
+    const base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: 'base64' });
+
+    const models = ['gemini-2.5-flash-image', 'gemini-3.1-flash-image-preview'];
+
+    for (const model of models) {
+      try {
+        console.log(`Removing background via Gemini ${model}...`);
+
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  { text: 'Remove the background from this coin image completely. Keep only the coin itself on a fully transparent background. Do not alter, redraw, or modify the coin in any way — preserve every detail exactly as it is. Output a PNG with transparent background.' },
+                  { inline_data: { mime_type: 'image/png', data: base64 } },
+                ],
+              }],
+              generationConfig: {
+                responseModalities: ['TEXT', 'IMAGE'],
+              },
+            }),
+          }
+        );
+
+        if (!res.ok) {
+          const errText = await res.text();
+          console.warn(`Gemini ${model} BG removal failed: ${res.status}`, errText);
+          continue;
+        }
+
+        const data = await res.json();
+        const parts = data.candidates?.[0]?.content?.parts;
+        if (!parts) {
+          console.warn(`Gemini ${model}: no parts in response`);
+          continue;
+        }
+
+        for (const part of parts) {
+          if (part.inline_data?.data) {
+            const outputPath = `${FileSystem.cacheDirectory}bg_removed_${Date.now()}.png`;
+            await FileSystem.writeAsStringAsync(outputPath, part.inline_data.data, { encoding: 'base64' });
+            console.log(`BG removed successfully via Gemini ${model}`);
+            return outputPath;
+          }
+        }
+        console.warn(`Gemini ${model}: response had parts but no image data`);
+      } catch (e) {
+        console.warn(`Gemini ${model} BG error:`, e);
+      }
+    }
+
+    return null;
+  } catch (e) {
+    console.warn('removeBackground error:', e);
+    return null;
+  }
 }

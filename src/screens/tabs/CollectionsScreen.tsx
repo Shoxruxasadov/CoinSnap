@@ -11,10 +11,10 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Image,
   Pressable,
   RefreshControl,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { LayoutGrid, List, Plus, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect, CommonActions } from '@react-navigation/native';
@@ -88,14 +88,14 @@ function CollectionCard({
         <>
           <View style={[miniCoinStyle, { borderColor: colors.surface.onBgBase, overflow: 'hidden' }]}>
             {coin.front_image_url ? (
-              <Image source={{ uri: coin.front_image_url }} style={styles.miniCoinImage} resizeMode="cover" />
+              <Image source={{ uri: coin.front_image_url }} style={styles.miniCoinImage} contentFit="cover" cachePolicy="disk" />
             ) : (
               <View style={[StyleSheet.absoluteFill, styles.coinPlaceholder, { backgroundColor: colors.border.border3 }]} />
             )}
           </View>
           <View style={[miniCoinStyle, { borderColor: colors.surface.onBgBase, overflow: 'hidden' }]}>
             {coin.back_image_url ? (
-              <Image source={{ uri: coin.back_image_url }} style={styles.miniCoinImage} resizeMode="cover" />
+              <Image source={{ uri: coin.back_image_url }} style={styles.miniCoinImage} contentFit="cover" cachePolicy="disk" />
             ) : (
               <View style={[StyleSheet.absoluteFill, styles.coinPlaceholder, { backgroundColor: colors.border.border3 }]} />
             )}
@@ -114,14 +114,14 @@ function CollectionCard({
           <React.Fragment key={i}>
             <View style={[miniCoinStyle, { borderColor: colors.surface.onBgBase, overflow: 'hidden' }]}>
               {coin.front_image_url ? (
-                <Image source={{ uri: coin.front_image_url }} style={styles.miniCoinImage} resizeMode="cover" />
+                <Image source={{ uri: coin.front_image_url }} style={styles.miniCoinImage} contentFit="cover" cachePolicy="disk" />
               ) : (
                 <View style={[StyleSheet.absoluteFill, styles.coinPlaceholder, { backgroundColor: colors.border.border3 }]} />
               )}
             </View>
             <View style={[miniCoinStyle, { borderColor: colors.surface.onBgBase, overflow: 'hidden' }]}>
               {coin.back_image_url ? (
-                <Image source={{ uri: coin.back_image_url }} style={styles.miniCoinImage} resizeMode="cover" />
+                <Image source={{ uri: coin.back_image_url }} style={styles.miniCoinImage} contentFit="cover" cachePolicy="disk" />
               ) : (
                 <View style={[StyleSheet.absoluteFill, styles.coinPlaceholder, { backgroundColor: colors.border.border3 }]} />
               )}

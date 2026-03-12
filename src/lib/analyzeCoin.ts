@@ -39,6 +39,12 @@ export async function analyzeCoinInApp(
     throw new Error(error.message || 'Failed to analyze coin');
   }
 
+  if (data?.unknown) {
+    const err = new Error('Unknown coin');
+    (err as any).isUnknownCoin = true;
+    throw err;
+  }
+
   if (!data?.coin) {
     throw new Error(data?.error || 'Failed to analyze coin');
   }

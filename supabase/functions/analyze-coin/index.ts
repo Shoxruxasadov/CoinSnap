@@ -61,6 +61,11 @@ PRICING RULES:
 - When in doubt, price HIGHER not lower
 - eBay collectors pay premium prices for nice looking coins
 
+UNKNOWN COIN DETECTION:
+- If the image does NOT contain a coin (e.g. random object, food, person, text, etc.), return ONLY this JSON: {"unknown": true}
+- If you cannot identify what coin it is at all, return ONLY: {"unknown": true}
+- Only return {"unknown": true} if you are confident this is NOT a coin. If it looks like any kind of coin or medal, analyze it normally.
+
 Other rules:
 - year_start and year_end: if this is a single year coin, set both to the same value
 - mintage: total mintage number, use null if unknown
@@ -167,55 +172,42 @@ async function fetchEbayPrices(
       return { min: null, max: null, avg: null };
     }
 
-    // Sort prices
     prices.sort((a, b) => a - b);
-    
-    // Calculate median
-    const medianIndex = Math.floor(prices.length / 2);
-    const median = prices.length % 2 === 0
-      ? (prices[medianIndex - 1] + prices[medianIndex]) / 2
-      : prices[medianIndex];
-    
-    // Grade-based price adjustment (1-70 scale)
-    // Higher grade = higher percentile of prices
-    const grade = gradeValue ?? 30; // default to VF if no grade
-    
-    // Determine which part of price distribution to use based on grade
-    // Low grade (1-15): use lower 10-25% of prices
-    // Medium-low (16-35): use 25-50% of prices
-    // Medium-high (36-55): use 50-75% of prices  
-    // High grade (56-70): use upper 75-95% of prices
-    let targetPercentile: number;
-    if (grade <= 15) {
-      targetPercentile = 0.10 + (grade / 15) * 0.15; // 0.10 to 0.25
-    } else if (grade <= 35) {
-      targetPercentile = 0.25 + ((grade - 15) / 20) * 0.25; // 0.25 to 0.50
-    } else if (grade <= 55) {
-      targetPercentile = 0.50 + ((grade - 35) / 20) * 0.25; // 0.50 to 0.75
-    } else {
-      targetPercentile = 0.75 + ((grade - 55) / 15) * 0.20; // 0.75 to 0.95
-    }
-    
-    const targetIndex = Math.floor(prices.length * targetPercentile);
-    const targetPrice = prices[Math.min(targetIndex, prices.length - 1)];
-    
-    // Calculate spread - narrower for high grades, wider for low grades
-    // High grade coins have more consistent pricing
-    const gradePercent = Math.min(grade / 70, 1);
-    const spreadPercent = 0.10 + (1 - gradePercent) * 0.15; // 10-25% spread
-    const maxSpread = 25; // Maximum $25 difference
-    const spread = Math.min(targetPrice * spreadPercent, maxSpread);
-    
-    // Minimum spread of $2 for very cheap coins
-    const actualSpread = Math.max(spread, 2);
-    
-    const min = Math.max(0.5, targetPrice - actualSpread / 2);
-    const max = targetPrice + actualSpread / 2;
 
-    return { 
-      min: Math.round(min * 100) / 100, 
-      max: Math.round(max * 100) / 100, 
-      avg: Math.round(targetPrice * 100) / 100 
+    // Remove bottom 15% outliers (auction starts, junk lots)
+    const trimCount = Math.floor(prices.length * 0.15);
+    const trimmed = prices.slice(trimCount);
+    if (trimmed.length === 0) return { min: null, max: null, avg: null };
+
+    const grade = gradeValue ?? 30;
+
+    // Map Sheldon grade to percentile of (trimmed) eBay prices
+    // Higher grade → pick from the upper part of the distribution
+    let pct: number;
+    if (grade <= 10) {
+      pct = 0.10 + (grade / 10) * 0.10;           // 0.10 – 0.20
+    } else if (grade <= 30) {
+      pct = 0.20 + ((grade - 10) / 20) * 0.20;    // 0.20 – 0.40
+    } else if (grade <= 50) {
+      pct = 0.40 + ((grade - 30) / 20) * 0.30;    // 0.40 – 0.70
+    } else if (grade <= 63) {
+      pct = 0.70 + ((grade - 50) / 13) * 0.15;    // 0.70 – 0.85
+    } else {
+      pct = 0.85 + ((grade - 63) / 7) * 0.10;     // 0.85 – 0.95
+    }
+
+    const idx = Math.min(Math.floor(trimmed.length * pct), trimmed.length - 1);
+    const targetPrice = trimmed[idx];
+
+    // Spread: 20% of target price, minimum $3
+    const spread = Math.max(targetPrice * 0.20, 3);
+    const min = Math.max(0.5, targetPrice - spread / 2);
+    const max = targetPrice + spread / 2;
+
+    return {
+      min: Math.round(min * 100) / 100,
+      max: Math.round(max * 100) / 100,
+      avg: Math.round(targetPrice * 100) / 100,
     };
   } catch (e) {
     console.error("eBay price fetch error:", e);
@@ -351,6 +343,14 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Check if Gemini flagged as unknown/not a coin
+    if (coinData.unknown === true) {
+      return new Response(
+        JSON.stringify({ unknown: true, error: "Unknown coin" }),
+        { status: 200, headers: CORS_HEADERS }
+      );
+    }
+
     // Fetch eBay prices (adjusted by coin grade)
     const ebayPrices = await fetchEbayPrices(
       String(coinData.name ?? ""),
@@ -359,11 +359,14 @@ Deno.serve(async (req: Request) => {
       coinData.grade_value as number | null
     );
 
-    // Use eBay prices if available, otherwise use Gemini estimates
-    const finalPriceMin =
-      ebayPrices.min ?? (coinData.estimated_price_min as number | null);
-    const finalPriceMax =
-      ebayPrices.max ?? (coinData.estimated_price_max as number | null);
+    // Merge eBay + Gemini: use whichever gives a higher range
+    const geminiMin = (coinData.estimated_price_min as number | null) ?? 0;
+    const geminiMax = (coinData.estimated_price_max as number | null) ?? 0;
+    const ebayMin = ebayPrices.min ?? 0;
+    const ebayMax = ebayPrices.max ?? 0;
+
+    const finalPriceMin = Math.max(geminiMin, ebayMin) || geminiMin || ebayMin || null;
+    const finalPriceMax = Math.max(geminiMax, ebayMax) || geminiMax || ebayMax || null;
 
     const { data: insertedCoin, error: insertError } = await supabase
       .from("coins")
