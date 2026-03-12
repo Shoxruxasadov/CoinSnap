@@ -21,53 +21,81 @@ function fromBase64(b64: string): Uint8Array {
   return arr;
 }
 
-async function tryHuggingFace(
-  imageBytes: Uint8Array,
-  hfToken: string
+async function tryReplicate(
+  imageBase64: string,
+  apiToken: string
 ): Promise<Uint8Array | null> {
-  const url =
-    "https://api-inference.huggingface.co/models/briaai/RMBG-1.4";
-
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${hfToken}`,
-          "Content-Type": "application/octet-stream",
-          "x-wait-for-model": "true",
+  try {
+    // Create prediction
+    const createRes = await fetch("https://api.replicate.com/v1/predictions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        "Content-Type": "application/json",
+        Prefer: "wait",
+      },
+      body: JSON.stringify({
+        version: "fb8af171cfa1616ddcf1242c093f9c46bcada5ad4cf6f2fbe8b81b330ec5c003",
+        input: {
+          image: `data:image/jpeg;base64,${imageBase64}`,
         },
-        body: imageBytes,
-      });
+      }),
+    });
 
-      if (res.status === 503) {
-        console.log("HF model loading, retrying in 8s...");
-        await new Promise((r) => setTimeout(r, 8000));
-        continue;
-      }
-
-      if (!res.ok) {
-        console.error("HuggingFace error:", res.status, await res.text());
-        return null;
-      }
-
-      const contentType = res.headers.get("content-type") || "";
-      if (!contentType.includes("image")) {
-        console.error("HF unexpected content-type:", contentType);
-        return null;
-      }
-
-      return new Uint8Array(await res.arrayBuffer());
-    } catch (e) {
-      console.error("HuggingFace exception:", e);
-      if (attempt === 0) {
-        await new Promise((r) => setTimeout(r, 3000));
-        continue;
-      }
+    if (!createRes.ok) {
+      console.error("Replicate create error:", createRes.status, await createRes.text());
       return null;
     }
+
+    const prediction = await createRes.json();
+    console.log("Replicate prediction status:", prediction.status);
+
+    // If completed immediately (Prefer: wait)
+    if (prediction.status === "succeeded" && prediction.output) {
+      const outputUrl = prediction.output;
+      const imgRes = await fetch(outputUrl);
+      if (!imgRes.ok) {
+        console.error("Replicate download error:", imgRes.status);
+        return null;
+      }
+      return new Uint8Array(await imgRes.arrayBuffer());
+    }
+
+    // Poll for result if not ready
+    if (prediction.status === "processing" || prediction.status === "starting") {
+      const getUrl = prediction.urls?.get || `https://api.replicate.com/v1/predictions/${prediction.id}`;
+      
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        
+        const pollRes = await fetch(getUrl, {
+          headers: { Authorization: `Bearer ${apiToken}` },
+        });
+        
+        if (!pollRes.ok) continue;
+        
+        const result = await pollRes.json();
+        console.log("Replicate poll status:", result.status);
+        
+        if (result.status === "succeeded" && result.output) {
+          const imgRes = await fetch(result.output);
+          if (imgRes.ok) {
+            return new Uint8Array(await imgRes.arrayBuffer());
+          }
+        }
+        
+        if (result.status === "failed" || result.status === "canceled") {
+          console.error("Replicate failed:", result.error);
+          return null;
+        }
+      }
+    }
+
+    return null;
+  } catch (e) {
+    console.error("Replicate exception:", e);
+    return null;
   }
-  return null;
 }
 
 async function tryRemoveBg(
@@ -116,30 +144,32 @@ Deno.serve(async (req: Request) => {
     }
 
     const binaryData = fromBase64(imageBase64);
-    const hfToken = Deno.env.get("HF_API_TOKEN");
+    const replicateToken = Deno.env.get("REPLICATE_API_TOKEN");
     const removeBgKey = Deno.env.get("REMOVEBG_API_KEY");
 
     let resultBytes: Uint8Array | null = null;
 
     console.log("Keys available:", {
-      hasHfToken: !!hfToken,
+      hasReplicateToken: !!replicateToken,
       hasRemoveBgKey: !!removeBgKey,
       imageSize: `${binaryData.length} bytes`,
     });
 
-    // 1) HuggingFace — truly free, sends raw bytes directly
-    if (hfToken) {
-      resultBytes = await tryHuggingFace(binaryData, hfToken);
+    // 1) Replicate rembg model (free tier: ~50 predictions/month)
+    if (replicateToken) {
+      console.log("Trying Replicate rembg...");
+      resultBytes = await tryReplicate(imageBase64, replicateToken);
       console.log(
-        "HuggingFace result:",
+        "Replicate result:",
         resultBytes ? `${resultBytes.length} bytes` : "null"
       );
     } else {
-      console.warn("HF_API_TOKEN not set, skipping HuggingFace");
+      console.warn("REPLICATE_API_TOKEN not set");
     }
 
     // 2) Fallback: remove.bg
     if (!resultBytes && removeBgKey) {
+      console.log("Trying remove.bg...");
       resultBytes = await tryRemoveBg(binaryData, removeBgKey);
       console.log(
         "remove.bg result:",

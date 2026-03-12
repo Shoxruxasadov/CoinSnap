@@ -19,6 +19,7 @@ import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { X, Zap, ImagePlus, Info, Crown } from 'lucide-react-native';
@@ -57,7 +58,9 @@ const GUIDE_PAGES = [
   },
 ];
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const SCREEN_DIMS = Dimensions.get('window');
+const SCREEN_WIDTH = SCREEN_DIMS.width;
+const SCREEN_HEIGHT = SCREEN_DIMS.height;
 const CIRCLE_SIZE = SCREEN_WIDTH * 0.65;
 const CIRCLE_RATIO = 0.65;
 const CIRCLE_TOP = (SCREEN_HEIGHT - CIRCLE_SIZE) / 2.2;
@@ -148,6 +151,7 @@ export default function ScannerScreen() {
   const [showSnapGuide, setShowSnapGuide] = useState(false);
   const [guidePageIndex, setGuidePageIndex] = useState(0);
   const guidePagerRef = useRef<PagerView>(null);
+  const [lastGalleryPhoto, setLastGalleryPhoto] = useState<string | null>(null);
 
   useEffect(() => {
     if (showSnapGuide) {
@@ -155,6 +159,28 @@ export default function ScannerScreen() {
       guidePagerRef.current?.setPage(0);
     }
   }, [showSnapGuide]);
+
+  // Fetch the last photo from gallery
+  useEffect(() => {
+    (async () => {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') return;
+      
+      const { assets } = await MediaLibrary.getAssetsAsync({
+        first: 1,
+        sortBy: [[MediaLibrary.SortBy.creationTime, false]],
+        mediaType: MediaLibrary.MediaType.photo,
+      });
+      
+      if (assets.length > 0) {
+        // Get local URI that can be loaded by Image component
+        const assetInfo = await MediaLibrary.getAssetInfoAsync(assets[0]);
+        if (assetInfo.localUri) {
+          setLastGalleryPhoto(assetInfo.localUri);
+        }
+      }
+    })();
+  }, []);
   const [zoom, setZoom] = useState(0.5 / 14.5);
   const zoomTrackWidth = useRef(0);
   const zoomTrackX = useRef(0);
@@ -300,33 +326,40 @@ export default function ScannerScreen() {
     const actions: ImageManipulator.Action[] = [];
 
     if (fromCamera) {
-      // Camera uses aspect-fill: map screen circle to photo coordinates
-      const circleScreenCX = SCREEN_WIDTH / 2;
-      const circleScreenCY = CIRCLE_CENTER_Y;
-      const circleScreenR = CIRCLE_SIZE / 2;
+      // iOS camera preview uses aspect-fill, but the captured photo may have different framing
+      // We need to map the circle position from screen coordinates to photo coordinates
+      
+      // Calculate the ratio of circle position relative to screen center
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const circleOffsetRatioY = (CIRCLE_CENTER_Y - screenCenterY) / screenCenterY; // -1 to 1 range
+      
+      // Photo center
+      const photoCenterX = imgW / 2;
+      const photoCenterY = imgH / 2;
+      
+      // Calculate crop size based on circle ratio
+      // The circle takes up CIRCLE_RATIO of screen width, we want similar ratio of photo
+      const cropSize = Math.round(Math.min(imgW, imgH) * CIRCLE_RATIO);
+      
+      // Apply the same relative offset from center
+      const photoOffsetY = circleOffsetRatioY * (imgH / 2);
+      
+      const originX = Math.round(photoCenterX - cropSize / 2);
+      const originY = Math.round(photoCenterY + photoOffsetY - cropSize / 2);
+      
+      // Clamp to valid range
+      const clampedOriginX = Math.max(0, Math.min(originX, imgW - cropSize));
+      const clampedOriginY = Math.max(0, Math.min(originY, imgH - cropSize));
+      
+      console.log('Crop debug:', {
+        screen: { w: SCREEN_WIDTH, h: SCREEN_HEIGHT, circleY: CIRCLE_CENTER_Y },
+        photo: { w: imgW, h: imgH },
+        circleOffsetRatioY,
+        cropSize,
+        origin: { x: clampedOriginX, y: clampedOriginY }
+      });
 
-      const photoAspect = imgW / imgH;
-      const screenAspect = SCREEN_WIDTH / SCREEN_HEIGHT;
-      const scale = photoAspect > screenAspect
-        ? imgH / SCREEN_HEIGHT
-        : imgW / SCREEN_WIDTH;
-      const offX = photoAspect > screenAspect
-        ? (imgW - SCREEN_WIDTH * scale) / 2
-        : 0;
-      const offY = photoAspect > screenAspect
-        ? 0
-        : (imgH - SCREEN_HEIGHT * scale) / 2;
-
-      const cx = offX + circleScreenCX * scale;
-      const cy = offY + circleScreenCY * scale;
-      const r = circleScreenR * scale;
-
-      const originX = Math.max(0, Math.round(cx - r));
-      const originY = Math.max(0, Math.round(cy - r));
-      const width = Math.min(Math.round(r * 2), imgW - originX);
-      const height = Math.min(Math.round(r * 2), imgH - originY);
-
-      actions.push({ crop: { originX, originY, width, height } });
+      actions.push({ crop: { originX: clampedOriginX, originY: clampedOriginY, width: cropSize, height: cropSize } });
       actions.push({ resize: { width: 1000 } });
     } else {
       const maxSize = 1200;
@@ -637,31 +670,41 @@ export default function ScannerScreen() {
         </View>
       </View>
 
-      {/* Thumbnails */}
+      {/* Thumbnails - always show both slots */}
       <View style={styles.thumbnailsContainer}>
-        {frontImage && (
-          <View style={styles.thumbnailWrap}>
-            <Image source={{ uri: frontImage }} style={styles.thumbnail} />
-            <TouchableOpacity style={styles.thumbnailRemove} onPress={handleRemoveFront}>
-              <X size={10} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        )}
-        {backImage && (
-          <View style={styles.thumbnailWrap}>
-            <Image source={{ uri: backImage }} style={styles.thumbnail} />
-            <TouchableOpacity style={styles.thumbnailRemove} onPress={handleRemoveBack}>
-              <X size={10} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        )}
-        {!frontImage && !backImage && (
-          <View style={styles.stepIndicators}>
-            <View style={[styles.stepDot, step === 1 && styles.stepDotActive]}>
-              <Text style={styles.stepDotText}>1</Text>
+        {/* Slot 1: Observe */}
+        <View style={styles.thumbnailSlot}>
+          {frontImage ? (
+            <View style={styles.thumbnailWrap}>
+              <Image source={{ uri: frontImage }} style={styles.thumbnail} />
+              <TouchableOpacity style={styles.thumbnailRemove} onPress={handleRemoveFront}>
+                <X size={10} color="#fff" />
+              </TouchableOpacity>
             </View>
-          </View>
-        )}
+          ) : (
+            <View style={[styles.thumbnailPlaceholder, step === 1 && styles.thumbnailPlaceholderActive]}>
+              <Text style={styles.thumbnailPlaceholderText}>1</Text>
+            </View>
+          )}
+          <Text style={styles.thumbnailLabel}>Observe</Text>
+        </View>
+
+        {/* Slot 2: Reverse */}
+        <View style={styles.thumbnailSlot}>
+          {backImage ? (
+            <View style={styles.thumbnailWrap}>
+              <Image source={{ uri: backImage }} style={styles.thumbnail} />
+              <TouchableOpacity style={styles.thumbnailRemove} onPress={handleRemoveBack}>
+                <X size={10} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={[styles.thumbnailPlaceholder, step === 2 && styles.thumbnailPlaceholderActive]}>
+              <Text style={styles.thumbnailPlaceholderText}>2</Text>
+            </View>
+          )}
+          <Text style={styles.thumbnailLabel}>Reverse</Text>
+        </View>
       </View>
 
       {/* Bottom controls */}
@@ -683,7 +726,11 @@ export default function ScannerScreen() {
         {/* Shutter row */}
         <View style={styles.shutterRow}>
           <TouchableOpacity style={styles.galleryBtn} onPress={handlePickFromGallery}>
-            <ImagePlus size={24} color="#fff" />
+            {lastGalleryPhoto ? (
+              <Image source={{ uri: lastGalleryPhoto }} style={styles.galleryPreview} />
+            ) : (
+              <ImagePlus size={24} color="#fff" />
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -900,8 +947,11 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 12,
+    gap: 16,
     zIndex: 10,
+  },
+  thumbnailSlot: {
+    alignItems: 'center',
   },
   thumbnailWrap: {
     position: 'relative',
@@ -912,6 +962,31 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     borderWidth: 2,
     borderColor: '#DFAC4C',
+  },
+  thumbnailPlaceholder: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  thumbnailPlaceholderActive: {
+    borderColor: 'rgba(255,255,255,0.6)',
+  },
+  thumbnailPlaceholderText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  thumbnailLabel: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 6,
+    textTransform: 'capitalize',
   },
   thumbnailRemove: {
     position: 'absolute',
@@ -924,28 +999,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepIndicators: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  stepDot: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.4)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepDotActive: {
-    borderColor: '#DFAC4C',
-  },
-  stepDotText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-
   // Bottom controls
   bottomControls: {
     position: 'absolute',
@@ -1003,6 +1056,12 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.4)',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  galleryPreview: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 10,
   },
   shutterBtn: {
     width: 72,
