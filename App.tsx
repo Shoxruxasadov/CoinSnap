@@ -1,8 +1,8 @@
-import 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, View, Text, StyleSheet } from 'react-native';
 import { useFonts } from '@expo-google-fonts/inter/useFonts';
+import { useSettingsStore } from './src/store/settingsStore';
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -15,17 +15,61 @@ import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TamaguiProvider } from 'tamagui';
 import { useEffect } from 'react';
+import Toast, { BaseToastProps } from 'react-native-toast-message';
+import { Check } from 'lucide-react-native';
 import { useAuthStore } from './src/store/authStore';
 import { useSupabaseSession } from './src/lib/useSupabaseSession';
 import RootStack from './src/navigation/RootStack';
 import tamaguiConfig from './tamagui.config';
 
+const toastConfig = {
+  success: ({ text1 }: BaseToastProps) => (
+    <View style={toastStyles.container}>
+      <View style={toastStyles.iconWrap}>
+        <Check size={20} color="#fff" strokeWidth={3} />
+      </View>
+      <Text style={toastStyles.text}>{text1}</Text>
+    </View>
+  ),
+};
+
+const toastStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#5DB075',
+    height: 60,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    marginHorizontal: 16,
+    gap: 14,
+  },
+  iconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  text: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+  },
+});
+
 SplashScreen.preventAutoHideAsync();
 
 export default function App() {
   const colorScheme = useColorScheme();
+  const themeMode = useSettingsStore((s) => s.themeMode);
   const { session, loading } = useSupabaseSession();
   const isSkipped = useAuthStore((s) => s.isSkipped);
+
+  const effectiveScheme = themeMode === 'system' ? colorScheme : themeMode;
+  const statusBarStyle = effectiveScheme === 'dark' ? 'light' : 'dark';
 
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
@@ -55,7 +99,7 @@ export default function App() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <BottomSheetModalProvider>
-            <StatusBar style="dark" />
+            <StatusBar style={statusBarStyle} />
             <NavigationContainer>
               <RootStack
                 isLoggedIn={isLoggedIn}
@@ -63,6 +107,7 @@ export default function App() {
               />
             </NavigationContainer>
           </BottomSheetModalProvider>
+          <Toast config={toastConfig} position="bottom" bottomOffset={100} visibilityTime={2000} />
         </SafeAreaProvider>
       </GestureHandlerRootView>
     </TamaguiProvider>

@@ -34,7 +34,7 @@ import { supabase } from '../../lib/supabase';
 import { useSupabaseSession } from '../../lib/useSupabaseSession';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
-import { useThemeColors } from '../../theme/useThemeColors';
+import { useThemeColors, useEffectiveColorScheme } from '../../theme/useThemeColors';
 import { AvatarIcon } from '../../components/icons/AvatarIcon';
 import ProCardTexture from '../../../assets/profile/texture.svg';
 
@@ -132,7 +132,13 @@ export default function ProfileScreen() {
   const vibration = useSettingsStore((s) => s.vibration);
   const setVibration = useSettingsStore((s) => s.setVibration);
   const currency = useSettingsStore((s) => s.currency);
-  const [darkMode, setDarkMode] = React.useState(true);
+  const setThemeMode = useSettingsStore((s) => s.setThemeMode);
+  const effectiveScheme = useEffectiveColorScheme();
+
+  const isDarkMode = effectiveScheme === 'dark';
+  const handleDarkModeChange = (value: boolean) => {
+    setThemeMode(value ? 'dark' : 'light');
+  };
 
   const isLoggedIn = !!session;
   const iconColor = colors.text.textAlt;
@@ -199,7 +205,7 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
       >
         <TouchableOpacity
-          style={[styles.userCard, { backgroundColor: colors.background.bgWhite, borderColor: colors.border.border3 }]}
+          style={[styles.userCard, { backgroundColor: colors.surface.onBgBase, borderColor: colors.border.border3 }]}
           onPress={isLoggedIn ? () => stackNav?.navigate('EditProfile') : handleLoginPress}
           activeOpacity={0.7}
         >
@@ -246,26 +252,26 @@ export default function ProfileScreen() {
         </TouchableOpacity>
 
         <Text style={[styles.sectionHeader, { color: colors.text.textAlt }]}>General</Text>
-        <View style={[styles.section, { backgroundColor: colors.background.bgWhite, borderColor: colors.border.border3 }]}>
+        <View style={[styles.section, { backgroundColor: colors.surface.onBgBase, borderColor: colors.border.border3 }]}>
           <SettingRow index={0} icon={<Trophy size={ICON_SIZE} color={iconColor} />} label="Achievements" value="5/20" onPress={handleAchievements} colors={colors} />
         </View>
 
         <Text style={[styles.sectionHeader, { color: colors.text.textAlt }]}>Personalization</Text>
-        <View style={[styles.section, { backgroundColor: colors.background.bgWhite, borderColor: colors.border.border3 }]}>
+        <View style={[styles.section, { backgroundColor: colors.surface.onBgBase, borderColor: colors.border.border3 }]}>
           <SettingRow index={0} icon={<DollarSign size={ICON_SIZE} color={iconColor} />} label="Currency" value={currency} onPress={handleCurrency} colors={colors} />
           <SettingRow index={1} icon={<Globe size={ICON_SIZE} color={iconColor} />} label="Language" value="English" onPress={() => {}} colors={colors} />
-          <SettingToggle index={2} icon={<Moon size={ICON_SIZE} color={iconColor} />} label="Dark Mode" value={darkMode} onValueChange={setDarkMode} colors={colors} />
+          <SettingToggle index={2} icon={<Moon size={ICON_SIZE} color={iconColor} />} label="Dark Mode" value={isDarkMode} onValueChange={handleDarkModeChange} colors={colors} />
           <SettingToggle index={3} icon={<Volume2 size={ICON_SIZE} color={iconColor} />} label="Vibration" value={vibration} onValueChange={setVibration} colors={colors} />
         </View>
 
         <Text style={[styles.sectionHeader, { color: colors.text.textAlt }]}>Legal</Text>
-        <View style={[styles.section, { backgroundColor: colors.background.bgWhite, borderColor: colors.border.border3 }]}>
+        <View style={[styles.section, { backgroundColor: colors.surface.onBgBase, borderColor: colors.border.border3 }]}>
           <SettingRow index={0} icon={<FileText size={ICON_SIZE} color={iconColor} />} label="Privacy Policy" onPress={handlePrivacyPolicy} colors={colors} />
           <SettingRow index={1} icon={<FileText size={ICON_SIZE} color={iconColor} />} label="Terms of Use" onPress={handleTermsOfUse} colors={colors} />
         </View>
 
         <Text style={[styles.sectionHeader, { color: colors.text.textAlt }]}>Other</Text>
-        <View style={[styles.section, { backgroundColor: colors.background.bgWhite, borderColor: colors.border.border3 }]}>
+        <View style={[styles.section, { backgroundColor: colors.surface.onBgBase, borderColor: colors.border.border3 }]}>
           <SettingRow index={0} icon={<Lightbulb size={ICON_SIZE} color={iconColor} />} label="Feature Request" onPress={handleFeatureRequest} colors={colors} />
           <SettingRow index={1} icon={<Star size={ICON_SIZE} color={iconColor} />} label="Rate the App" onPress={handleRateApp} colors={colors} />
           <SettingRow index={2} icon={<UserPlus size={ICON_SIZE} color={iconColor} />} label="Invite friends" onPress={handleInviteFriends} colors={colors} />

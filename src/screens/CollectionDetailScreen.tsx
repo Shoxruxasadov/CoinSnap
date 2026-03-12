@@ -16,9 +16,13 @@ import { ChevronLeft, LayoutGrid, List, MoreHorizontal, MoreVertical, Pencil, Tr
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { useThemeColors } from '../theme/useThemeColors';
 import { triggerSelection } from '../lib/haptics';
+import { formatPriceRange, formatPrice } from '../lib/currency';
+import { useSettingsStore } from '../store/settingsStore';
+import { useLocalCollectionStore } from '../store/localCollectionStore';
+import { useSupabaseSession } from '../lib/useSupabaseSession';
 
 type Nav = NativeStackNavigationProp<MainStackParamList>;
 import { supabase } from '../lib/supabase';
@@ -71,13 +75,6 @@ function formatDate(iso: string | null): string {
   }
 }
 
-function formatPriceRange(min: number | null, max: number | null): string {
-  if (min != null && max != null) return `$${min}-$${max}`;
-  if (min != null) return `$${min}`;
-  if (max != null) return `$${max}`;
-  return '';
-}
-
 function CoinRowList({
   item,
   colors,
@@ -101,9 +98,9 @@ function CoinRowList({
       onPress={() => onPress(item)}
       onLongPress={() => onDotsPress(item)}
     >
-      <View style={[styles.coinImagesWrap, { backgroundColor: colors.surface.onBgAlt }]}>
+      <View style={[styles.coinImagesWrap, { backgroundColor: colors.surface.surface }]}>
         {hasFront && (
-          <View style={styles.coinImageBack}>
+          <View style={[styles.coinImageBack, { borderColor: colors.surface.surface }]}>
             <Animated.Image
               source={{ uri: item.front_image_url! }}
               style={styles.coinCircleImage}
@@ -113,7 +110,7 @@ function CoinRowList({
           </View>
         )}
         {hasBack && (
-          <View style={styles.coinImageFront}>
+          <View style={[styles.coinImageFront, { borderColor: colors.surface.surface }]}>
             <Animated.Image
               source={{ uri: item.back_image_url! }}
               style={styles.coinCircleImage}
@@ -123,7 +120,7 @@ function CoinRowList({
           </View>
         )}
         {!hasFront && !hasBack && (
-          <View style={[styles.coinImagePlaceholder, { backgroundColor: colors.surface.onBgAlt }]} />
+          <View style={[styles.coinImagePlaceholder, { backgroundColor: colors.surface.surface }]} />
         )}
       </View>
       <View style={styles.coinInfo}>
@@ -144,14 +141,16 @@ function CoinCardGrid({
   colors,
   onPress,
   onDotsPress,
+  currency,
 }: {
   item: CollectionCoinRow;
   colors: ReturnType<typeof useThemeColors>;
   onPress: (coin: CollectionCoinRow) => void;
   onDotsPress: (coin: CollectionCoinRow) => void;
+  currency: string;
 }) {
   const displayName = [item.name, item.country, item.year_start ?? item.year_end].filter(Boolean).join(' ').trim() || item.name;
-  const priceText = formatPriceRange(item.estimated_price_min, item.estimated_price_max);
+  const priceText = formatPriceRange(item.estimated_price_min, item.estimated_price_max, currency);
   const hasFront = !!item.front_image_url;
   const hasBack = !!item.back_image_url;
   const dateStr = formatDate(item.scanned_at ?? item.created_at);
@@ -163,7 +162,7 @@ function CoinCardGrid({
       onPress={() => onPress(item)}
       onLongPress={() => onDotsPress(item)}
     >
-      <View style={[styles.coinCardGridImageWrap, { backgroundColor: colors.surface.onBgAlt }]}>
+      <View style={[styles.coinCardGridImageWrap, { backgroundColor: colors.surface.surface }]}>
         {(hasFront || hasBack) ? (
           <View style={styles.coinCardGridCoins}>
             {hasFront && (
@@ -208,6 +207,10 @@ export default function CollectionDetailScreen() {
   const route = useRoute<CollectionDetailRoute>();
   const navigation = useNavigation<Nav>();
   const collection = route.params?.collection;
+  const currency = useSettingsStore((s) => s.currency);
+  const { session } = useSupabaseSession();
+  const { coins: localCoins, generalCoinIds, removeCoinFromGeneral } = useLocalCollectionStore();
+  const isLocalCollection = collection?.id === -1;
 
   const handlePress = (coin: CollectionCoinRow) => {
     navigation.navigate('ScanResult', { coin });
@@ -230,7 +233,8 @@ export default function CollectionDetailScreen() {
   const itemActionSnapPoints = useMemo(() => [160], []);
   const itemAddToSnapPoints = useMemo(() => ['55%'], []);
 
-  const coinIds = collection?.coin_ids ?? [];
+  // For local collection, use live generalCoinIds from store
+  const coinIds = isLocalCollection ? generalCoinIds : (collection?.coin_ids ?? []);
   const orderedCoins = useMemo(() => {
     const byId: Record<number, CollectionCoinRow> = {};
     coins.forEach((c) => { byId[c.id] = c; });
@@ -258,6 +262,20 @@ export default function CollectionDetailScreen() {
       setLoading(false);
       return;
     }
+    
+    // Handle local collection (id = -1)
+    if (isLocalCollection) {
+      const localCoinData = localCoins
+        .filter((c) => generalCoinIds.includes(c.id))
+        .map((c) => ({
+          ...c,
+          scanned_at: null,
+        } as CollectionCoinRow));
+      setCoins(localCoinData);
+      setLoading(false);
+      return;
+    }
+    
     let cancelled = false;
     setLoading(true);
     supabase
@@ -274,7 +292,7 @@ export default function CollectionDetailScreen() {
         setCoins((data as CollectionCoinRow[]) ?? []);
       });
     return () => { cancelled = true; };
-  }, [collection?.id, coinIds.join(',')]);
+  }, [collection?.id, coinIds.join(','), isLocalCollection, localCoins, generalCoinIds]);
 
   useEffect(() => {
     const userId = collection?.user_id;
@@ -282,11 +300,6 @@ export default function CollectionDetailScreen() {
     supabase.from('collections').select('*').eq('user_id', userId).order('created_at', { ascending: false })
       .then(({ data }) => { if (data) setAllCollections(data as CollectionRow[]); });
   }, [collection?.user_id]);
-
-  const coinInAnyCollection = useMemo(() => {
-    if (!selectedCoin) return false;
-    return allCollections.some((c) => (c.coin_ids || []).includes(selectedCoin.id));
-  }, [selectedCoin, allCollections]);
 
   const handleItemDotsPress = (coin: CollectionCoinRow) => {
     triggerSelection();
@@ -307,25 +320,40 @@ export default function CollectionDetailScreen() {
       {
         text: 'Remove', style: 'destructive',
         onPress: async () => {
-          const newIds = (collection.coin_ids || []).filter((id) => id !== selectedCoin.id);
-          await supabase.from('collections').update({ coin_ids: newIds, updated_at: new Date().toISOString() }).eq('id', collection.id);
-          setSelectedCoin(null);
-          navigation.goBack();
+          if (isLocalCollection) {
+            // Remove from local collection
+            removeCoinFromGeneral(selectedCoin.id);
+            setCoins((prev) => prev.filter((c) => c.id !== selectedCoin.id));
+            setSelectedCoin(null);
+          } else {
+            const newIds = (collection.coin_ids || []).filter((id) => id !== selectedCoin.id);
+            await supabase.from('collections').update({ coin_ids: newIds, updated_at: new Date().toISOString() }).eq('id', collection.id);
+            setSelectedCoin(null);
+            navigation.goBack();
+          }
         },
       },
     ]);
   };
 
   const handleItemConfirmAddTo = async () => {
-    if (!selectedCollectionId || !selectedCoin) return;
+    if (!selectedCollectionId || !selectedCoin || !collection) return;
     const col = allCollections.find((c) => c.id === selectedCollectionId);
     if (!col) return;
+
+    // Remove from current collection
+    const oldIds = (collection.coin_ids || []).filter((id) => id !== selectedCoin.id);
+    await supabase.from('collections').update({ coin_ids: oldIds, updated_at: new Date().toISOString() }).eq('id', collection.id);
+
+    // Add to new collection
     const newIds = [...(col.coin_ids || []), selectedCoin.id];
     await supabase.from('collections').update({ coin_ids: newIds, updated_at: new Date().toISOString() }).eq('id', col.id);
+
     itemAddToSheetRef.current?.close();
     setSelectedCollectionId(null);
     setSelectedCoin(null);
-    Alert.alert('Added', `Coin added to "${col.name}"`);
+    Alert.alert('Moved', `Coin moved to "${col.name}"`);
+    navigation.goBack();
   };
 
   const toggleViewMode = () => {
@@ -390,7 +418,7 @@ export default function CollectionDetailScreen() {
   const isList = viewMode === 'list';
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background.bgBase }]}>
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background.bgBaseElevated }]}>
       <View style={[styles.header]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={12}>
           <ChevronLeft size={24} color={colors.text.textBase} strokeWidth={2.5} />
@@ -433,19 +461,19 @@ export default function CollectionDetailScreen() {
               <View style={[styles.summaryCard, { backgroundColor: colors.surface.onBgBase }]}>
                 <Text style={[styles.summaryLabel, { color: colors.text.textTertiary }]}>Total collection value</Text>
                 <Text style={[styles.summaryTotal, { color: colors.text.textBrand }]}>
-                  ${Math.round(summary.total)}
+                  {formatPrice(summary.total, currency, { decimals: 0 })}
                 </Text>
                 <View style={styles.summaryRow}>
-                  <View style={[styles.summaryBox, { backgroundColor: colors.background.bgBase }]}>
+                  <View style={[styles.summaryBox, { backgroundColor: colors.surface.surface }]}>
                     <Text style={[styles.summaryBoxLabel, { color: colors.text.textTertiary }]}>Lowest Coin</Text>
                     <Text style={[styles.summaryBoxValue, { color: colors.text.textBase }]}>
-                      {summary.lowest != null ? `$${summary.lowest}` : '—'}
+                      {summary.lowest != null ? formatPrice(summary.lowest, currency) : '—'}
                     </Text>
                   </View>
-                  <View style={[styles.summaryBox, { backgroundColor: colors.background.bgBase }]}>
+                  <View style={[styles.summaryBox, { backgroundColor: colors.surface.surface }]}>
                     <Text style={[styles.summaryBoxLabel, { color: colors.text.textTertiary }]}>Highest Coin</Text>
                     <Text style={[styles.summaryBoxValue, { color: colors.text.textBase }]}>
-                      {summary.highest != null ? `$${summary.highest}` : '—'}
+                      {summary.highest != null ? formatPrice(summary.highest, currency) : '—'}
                     </Text>
                   </View>
                 </View>
@@ -470,7 +498,7 @@ export default function CollectionDetailScreen() {
           ) : (
             <View style={styles.itemsGrid}>
               {orderedCoins.map((coin) => (
-                <CoinCardGrid key={coin.id} item={coin} colors={colors} onPress={handlePress} onDotsPress={handleItemDotsPress} />
+                <CoinCardGrid key={coin.id} item={coin} colors={colors} onPress={handlePress} onDotsPress={handleItemDotsPress} currency={currency} />
               ))}
             </View>
           )}
@@ -484,17 +512,21 @@ export default function CollectionDetailScreen() {
         snapPoints={moreSnapPoints}
         enablePanDownToClose
         backdropComponent={renderBackdrop}
-        backgroundStyle={{ backgroundColor: colors.background.bgBase }}
-        handleIndicatorStyle={{ backgroundColor: colors.border.border3, width: 36, height: 4, borderRadius: 2 }}
+        backgroundStyle={{ backgroundColor: colors.surface.onBgBase }}
+        handleIndicatorStyle={{ backgroundColor: colors.border.border4, width: 36, height: 4, borderRadius: 2 }}
       >
         <BottomSheetView style={sheetStyles.container}>
           <TouchableOpacity style={sheetStyles.row} onPress={handleEditCollection}>
             <Pencil size={22} color={colors.text.textBase} />
             <Text style={[sheetStyles.rowText, { color: colors.text.textBase }]}>Edit collection</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={sheetStyles.row} onPress={handleDeleteCollection}>
-            <Trash2 size={22} color="#E53935" />
-            <Text style={[sheetStyles.rowText, { color: '#E53935' }]}>Delete collection</Text>
+          <TouchableOpacity
+            style={[sheetStyles.row, collection?.is_default && { opacity: 0.35 }]}
+            onPress={collection?.is_default ? undefined : handleDeleteCollection}
+            disabled={!!collection?.is_default}
+          >
+            <Trash2 size={22} color={colors.state.red} />
+            <Text style={[sheetStyles.rowText, { color: colors.state.red }]}>Delete collection</Text>
           </TouchableOpacity>
         </BottomSheetView>
       </BottomSheet>
@@ -505,16 +537,18 @@ export default function CollectionDetailScreen() {
         index={-1}
         snapPoints={editSnapPoints}
         enablePanDownToClose
+        enableDynamicSizing={false}
         backdropComponent={renderBackdrop}
-        backgroundStyle={{ backgroundColor: colors.background.bgBase }}
-        handleIndicatorStyle={{ backgroundColor: colors.border.border3, width: 36, height: 4, borderRadius: 2 }}
-        keyboardBehavior="interactive"
+        backgroundStyle={{ backgroundColor: colors.surface.onBgBase }}
+        handleIndicatorStyle={{ backgroundColor: colors.border.border4, width: 36, height: 4, borderRadius: 2 }}
+        keyboardBehavior="extend"
         keyboardBlurBehavior="restore"
+        android_keyboardInputMode="adjustResize"
       >
         <BottomSheetView style={sheetStyles.editContainer}>
           <Text style={[sheetStyles.editTitle, { color: colors.text.textBase }]}>Edit Collection</Text>
           <Text style={[sheetStyles.inputLabel, { color: colors.text.textBase }]}>Collection name</Text>
-          <TextInput
+          <BottomSheetTextInput
             style={[sheetStyles.input, { backgroundColor: colors.surface.onBgBase, color: colors.text.textBase, borderColor: colors.border.border3 }]}
             value={editName}
             onChangeText={setEditName}
@@ -522,12 +556,12 @@ export default function CollectionDetailScreen() {
             placeholderTextColor={colors.text.textTertiary}
           />
           <TouchableOpacity
-            style={[sheetStyles.saveBtn, { backgroundColor: editName.trim() ? '#1C1C1E' : colors.surface.onBgAlt }]}
+            style={[sheetStyles.saveBtn, { backgroundColor: editName.trim() ? colors.background.bgInverse : colors.surface.surfaceElevated }]}
             onPress={handleSaveEdit}
             disabled={!editName.trim()}
             activeOpacity={0.8}
           >
-            <Text style={[sheetStyles.saveBtnText, { color: editName.trim() ? '#fff' : colors.text.textTertiary }]}>
+            <Text style={[sheetStyles.saveBtnText, { color: editName.trim() ? colors.text.textInverse : colors.text.textTertiary }]}>
               Save
             </Text>
           </TouchableOpacity>
@@ -541,19 +575,19 @@ export default function CollectionDetailScreen() {
         snapPoints={itemActionSnapPoints}
         enablePanDownToClose
         backdropComponent={renderBackdrop}
-        backgroundStyle={{ backgroundColor: colors.background.bgBase }}
-        handleIndicatorStyle={{ backgroundColor: colors.border.border3, width: 36, height: 4, borderRadius: 2 }}
+        backgroundStyle={{ backgroundColor: colors.surface.onBgBase }}
+        handleIndicatorStyle={{ backgroundColor: colors.border.border4, width: 36, height: 4, borderRadius: 2 }}
       >
         <BottomSheetView style={sheetStyles.container}>
-          {!coinInAnyCollection && (
+          {!isLocalCollection && (
             <TouchableOpacity style={sheetStyles.actionRow} onPress={handleItemOpenAddTo}>
               <FolderPlus size={22} color={colors.text.textBase} />
-              <Text style={[sheetStyles.actionRowText, { color: colors.text.textBase }]}>Add to</Text>
+              <Text style={[sheetStyles.actionRowText, { color: colors.text.textBase }]}>Change collection</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity style={sheetStyles.actionRow} onPress={handleItemDelete}>
-            <Trash2 size={22} color="#E53935" />
-            <Text style={[sheetStyles.actionRowText, { color: '#E53935' }]}>Delete</Text>
+            <Trash2 size={22} color={colors.state.red} />
+            <Text style={[sheetStyles.actionRowText, { color: colors.state.red }]}>Delete</Text>
           </TouchableOpacity>
         </BottomSheetView>
       </BottomSheet>
@@ -565,12 +599,12 @@ export default function CollectionDetailScreen() {
         snapPoints={itemAddToSnapPoints}
         enablePanDownToClose
         backdropComponent={renderBackdrop}
-        backgroundStyle={{ backgroundColor: colors.background.bgBase }}
-        handleIndicatorStyle={{ backgroundColor: colors.border.border3, width: 36, height: 4, borderRadius: 2 }}
+        backgroundStyle={{ backgroundColor: colors.surface.onBgBase }}
+        handleIndicatorStyle={{ backgroundColor: colors.border.border4, width: 36, height: 4, borderRadius: 2 }}
       >
         <BottomSheetView style={sheetStyles.addToContent}>
           <View style={sheetStyles.addToHeader}>
-            <Text style={[sheetStyles.addToTitle, { color: colors.text.textBase }]}>Add to</Text>
+            <Text style={[sheetStyles.addToTitle, { color: colors.text.textBase }]}>Change collection</Text>
             <TouchableOpacity onPress={() => itemAddToSheetRef.current?.close()}>
               <X size={24} color={colors.text.textAlt} />
             </TouchableOpacity>
@@ -592,12 +626,12 @@ export default function CollectionDetailScreen() {
             })}
           </BottomSheetScrollView>
           <TouchableOpacity
-            style={[sheetStyles.confirmBtn, { backgroundColor: selectedCollectionId ? '#1C1C1E' : colors.surface.onBgAlt }]}
+            style={[sheetStyles.confirmBtn, { backgroundColor: selectedCollectionId ? colors.background.bgInverse : colors.surface.surfaceElevated }]}
             onPress={handleItemConfirmAddTo}
             disabled={!selectedCollectionId}
             activeOpacity={0.8}
           >
-            <Text style={[sheetStyles.confirmBtnText, { color: selectedCollectionId ? '#fff' : colors.text.textTertiary }]}>Confirm</Text>
+            <Text style={[sheetStyles.confirmBtnText, { color: selectedCollectionId ? colors.text.textInverse : colors.text.textTertiary }]}>Confirm</Text>
           </TouchableOpacity>
         </BottomSheetView>
       </BottomSheet>
@@ -676,40 +710,37 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   coinImagesWrap: {
-    width: 96,
+    width: 100,
     height: 64,
     borderRadius: 14,
-    overflow: 'hidden',
     position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   coinImageBack: {
-    position: 'absolute',
-    left: 8,
-    top: '50%',
-    transform: [{ translateY: -24 }],
     width: 48,
     height: 48,
     borderRadius: 24,
     overflow: 'hidden',
+    borderWidth: 2,
+    marginRight: -8,
+    zIndex: 1,
   },
   coinImageFront: {
-    position: 'absolute',
-    right: 8,
-    top: '50%',
-    transform: [{ translateY: -24 }],
     width: 48,
     height: 48,
     borderRadius: 24,
     overflow: 'hidden',
+    borderWidth: 2,
+    marginLeft: -8,
+    zIndex: 2,
   },
   coinCircleImage: { width: '100%', height: '100%' },
   coinImagePlaceholder: {
-    position: 'absolute',
-    left: 14,
-    top: 14,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
   },
   coinInfo: { flex: 1, marginLeft: 10 },
   coinName: { fontSize: 16, fontWeight: '500', marginBottom: 2, lineHeight: 22 },

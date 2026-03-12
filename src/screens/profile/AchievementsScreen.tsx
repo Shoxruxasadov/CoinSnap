@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,6 +9,7 @@ import {
   Dimensions,
   Modal,
   Alert,
+  Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -37,6 +38,8 @@ const COLLECTOR_BADGES: CollectorBadge[] = [
   { id: 'collector10', count: 10, name: 'Mini Pocket', desc: 'Collect 10 coins', dialogDesc: 'Collect 10 coins to get this achievement' },
 ];
 
+const BADGE_DISABLED_OPACITY = 0.45;
+
 const activeImages: Record<string, any> = {
   streak3: require('../../../assets/achievements/streak3.png'),
   streak7: require('../../../assets/achievements/streak7.png'),
@@ -45,16 +48,6 @@ const activeImages: Record<string, any> = {
   streak60: require('../../../assets/achievements/streak60.png'),
   streak100: require('../../../assets/achievements/streak100.png'),
   collector10: require('../../../assets/achievements/collector10.png'),
-};
-
-const inactiveImages: Record<string, any> = {
-  streak3: require('../../../assets/achievements-nonactive/streak3.png'),
-  streak7: require('../../../assets/achievements-nonactive/streak7.png'),
-  streak14: require('../../../assets/achievements-nonactive/streak14.png'),
-  streak30: require('../../../assets/achievements-nonactive/streak30.png'),
-  streak60: require('../../../assets/achievements-nonactive/streak60.png'),
-  streak100: require('../../../assets/achievements-nonactive/streak100.png'),
-  collector10: require('../../../assets/achievements-nonactive/collector10.png'),
 };
 
 type SelectedBadge = { id: string; name: string; dialogDesc: string; active: boolean } | null;
@@ -69,17 +62,43 @@ export default function AchievementsScreen() {
   const [streak, setStreak] = useState(0);
   const [scanCount, setScanCount] = useState(0);
   const [selectedBadge, setSelectedBadge] = useState<SelectedBadge>(null);
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const cardTranslateY = useRef(new Animated.Value(300)).current;
 
   useEffect(() => {
     if (!userId) return;
 
     (async () => {
-      const { count } = await supabase
-        .from('coins')
-        .select('*', { count: 'exact', head: true })
-        .eq('scanned_by_user_id', userId);
+      const [{ count }, { data: profile }] = await Promise.all([
+        supabase.from('coins').select('*', { count: 'exact', head: true }).eq('scanned_by_user_id', userId),
+        supabase.from('profiles').select('last_login_at, streak_days').eq('id', userId).single(),
+      ]);
 
       setScanCount(count ?? 0);
+
+      const today = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+      const lastLogin = (profile?.last_login_at as string) ?? null;
+      const currentStreak = (profile?.streak_days as number) ?? 0;
+
+      let newStreak = currentStreak;
+      if (!lastLogin) {
+        newStreak = 1;
+      } else if (lastLogin === yesterday) {
+        newStreak = currentStreak + 1;
+      } else if (lastLogin !== today) {
+        newStreak = 1;
+      }
+
+      if (lastLogin !== today) {
+        await supabase.from('profiles').update({
+          last_login_at: today,
+          streak_days: newStreak,
+          updated_at: new Date().toISOString(),
+        }).eq('id', userId);
+      }
+
+      setStreak(lastLogin === today ? currentStreak : newStreak);
     })();
   }, [userId]);
 
@@ -98,8 +117,41 @@ export default function AchievementsScreen() {
 
   const closeDialog = () => {
     triggerSelection();
-    setSelectedBadge(null);
+    Animated.parallel([
+      Animated.timing(overlayOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(cardTranslateY, {
+        toValue: 300,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setSelectedBadge(null);
+      cardTranslateY.setValue(300);
+    });
   };
+
+  useEffect(() => {
+    if (!selectedBadge) return;
+    overlayOpacity.setValue(0);
+    cardTranslateY.setValue(300);
+    Animated.parallel([
+      Animated.timing(overlayOpacity, {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+      Animated.spring(cardTranslateY, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 65,
+        friction: 11,
+      }),
+    ]).start();
+  }, [selectedBadge]);
 
   const handleInfoPress = () => {
     triggerSelection();
@@ -139,8 +191,8 @@ export default function AchievementsScreen() {
                 activeOpacity={0.8}
               >
                 <Image
-                  source={active ? activeImages[badge.id] : inactiveImages[badge.id]}
-                  style={styles.badgeImage}
+                  source={activeImages[badge.id]}
+                  style={[styles.badgeImage, { opacity: active ? 1 : BADGE_DISABLED_OPACITY }]}
                   resizeMode="contain"
                 />
                 <Text style={[styles.badgeName, { color: colors.text.textBase }]}>{badge.name}</Text>
@@ -162,8 +214,8 @@ export default function AchievementsScreen() {
                 activeOpacity={0.8}
               >
                 <Image
-                  source={active ? activeImages[badge.id] : inactiveImages[badge.id]}
-                  style={styles.badgeImage}
+                  source={activeImages[badge.id]}
+                  style={[styles.badgeImage, { opacity: active ? 1 : BADGE_DISABLED_OPACITY }]}
                   resizeMode="contain"
                 />
                 <Text style={[styles.badgeName, { color: colors.text.textBase }]}>{badge.name}</Text>
@@ -175,53 +227,52 @@ export default function AchievementsScreen() {
       </ScrollView>
 
       {/* Achievement Dialog */}
-      <Modal visible={!!selectedBadge} transparent animationType="fade">
-        <TouchableOpacity
-          style={styles.dialogOverlay}
-          activeOpacity={1}
-          onPress={closeDialog}
+      <Modal visible={!!selectedBadge} transparent animationType="none">
+        <Animated.View
+          style={[
+            styles.dialogOverlay,
+            { backgroundColor: 'rgba(0,0,0,0.5)', opacity: overlayOpacity },
+          ]}
         >
-          <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()} style={styles.dialogCard}>
-            {/* Confetti decoration */}
-            <View style={styles.confettiWrap}>
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                <View
-                  key={i}
-                  style={[
-                    styles.confettiDot,
-                    {
-                      backgroundColor: ['#FFD700', '#E53935', '#1E88E5', '#8E24AA', '#43A047'][i % 5],
-                      left: `${10 + (i * 11)}%`,
-                      top: i % 2 === 0 ? 4 : 12,
-                      width: 6 + (i % 3),
-                      height: 6 + (i % 3),
-                    },
-                  ]}
-                />
-              ))}
-            </View>
-            {selectedBadge && (
-              <>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={closeDialog}
+          />
+          <Animated.View
+            style={[
+              styles.dialogCardWrapper,
+              { transform: [{ translateY: cardTranslateY }] },
+            ]}
+          >
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={(e) => e.stopPropagation()}
+              style={[styles.dialogCard, { backgroundColor: colors.surface.onBgBase }]}
+            >
+              {selectedBadge && (
+                <>
                 <Image
-                  source={
-                    selectedBadge.active
-                      ? activeImages[selectedBadge.id]
-                      : inactiveImages[selectedBadge.id]
-                  }
-                  style={styles.dialogBadgeImage}
+                  source={activeImages[selectedBadge.id]}
+                  style={[styles.dialogBadgeImage, { opacity: selectedBadge.active ? 1 : BADGE_DISABLED_OPACITY }]}
                   resizeMode="contain"
                 />
-                <Text style={[styles.dialogTitle, { color: colors.text.textBase }]}>{selectedBadge.name}</Text>
-                <Text style={[styles.dialogDesc, { color: colors.text.textTertiary }]}>
-                  {selectedBadge.dialogDesc}
-                </Text>
-                <TouchableOpacity style={styles.dialogBtn} onPress={closeDialog} activeOpacity={0.8}>
-                  <Text style={styles.dialogBtnText}>Thanks!</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </TouchableOpacity>
-        </TouchableOpacity>
+                  <Text style={[styles.dialogTitle, { color: colors.text.textBase }]}>{selectedBadge.name}</Text>
+                  <Text style={[styles.dialogDesc, { color: colors.text.textTertiary }]}>
+                    {selectedBadge.dialogDesc}
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.dialogBtn, { backgroundColor: colors.background.bgInverse }]}
+                    onPress={closeDialog}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.dialogBtnText, { color: colors.text.textInverse }]}>Thanks!</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </TouchableOpacity>
+          </Animated.View>
+        </Animated.View>
       </Modal>
     </View>
   );
@@ -292,29 +343,19 @@ const styles = StyleSheet.create({
   },
   dialogOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
     paddingBottom: 40,
     paddingHorizontal: 24,
   },
+  dialogCardWrapper: {
+    alignSelf: 'stretch',
+  },
   dialogCard: {
-    backgroundColor: '#FFFFFF',
     borderRadius: 20,
     paddingHorizontal: 24,
     paddingTop: 32,
     paddingBottom: 24,
     alignItems: 'center',
-  },
-  confettiWrap: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 28,
-  },
-  confettiDot: {
-    position: 'absolute',
-    borderRadius: 2,
   },
   dialogBadgeImage: {
     width: 120,
@@ -334,7 +375,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   dialogBtn: {
-    backgroundColor: '#000000',
     paddingVertical: 14,
     paddingHorizontal: 32,
     borderRadius: 12,
@@ -342,7 +382,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dialogBtnText: {
-    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },

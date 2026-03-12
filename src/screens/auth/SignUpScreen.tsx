@@ -16,6 +16,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/RootStack';
 import { useThemeColors } from '../../theme/useThemeColors';
 import { supabase } from '../../lib/supabase';
+import { useLocalCollectionStore } from '../../store/localCollectionStore';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'SignUp'>;
@@ -29,6 +30,7 @@ export default function SignUpScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [hidePassword, setHidePassword] = useState(true);
   const [loading, setLoading] = useState(false);
+  const { syncToSupabase, hasLocalData } = useLocalCollectionStore();
 
   const handleSignUp = async () => {
     if (!name.trim()) {
@@ -53,14 +55,26 @@ export default function SignUpScreen({ navigation }: Props) {
         },
       },
     });
-    setLoading(false);
+    
     if (error) {
+      setLoading(false);
       Alert.alert('Sign Up Failed', error.message);
       return;
     }
+    
     if (data.session) {
+      // Sync local collection data to Supabase
+      if (hasLocalData()) {
+        try {
+          await syncToSupabase(data.session.user.id);
+        } catch (err) {
+          console.error('Failed to sync local data:', err);
+        }
+      }
+      setLoading(false);
       navigation.replace('Main');
     } else if (data.user && !data.session) {
+      setLoading(false);
       Alert.alert(
         'Check your email',
         'We sent you a confirmation link. Please confirm your email to sign in.'
@@ -75,7 +89,7 @@ export default function SignUpScreen({ navigation }: Props) {
         {
           paddingTop: insets.top,
           paddingBottom: insets.bottom,
-          backgroundColor: colors.background.bgWhite,
+          backgroundColor: colors.background.bgBaseElevated,
         },
       ]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -177,7 +191,7 @@ export default function SignUpScreen({ navigation }: Props) {
           {loading ? (
             <ActivityIndicator color={colors.text.textInverse} />
           ) : (
-            <Text style={[styles.primaryBtnText, { color: colors.text.textWhite }]}>Sign Up</Text>
+            <Text style={[styles.primaryBtnText, { color: colors.text.textInverse }]}>Sign Up</Text>
           )}
         </TouchableOpacity>
       </View>

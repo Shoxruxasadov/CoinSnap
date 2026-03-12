@@ -46,13 +46,17 @@ import BottomSheet, {
   BottomSheetScrollView,
 } from "@gorhom/bottom-sheet";
 import type { MainStackParamList } from "../navigation/MainStack";
-import { useThemeColors } from "../theme/useThemeColors";
+import { useThemeColors, useEffectiveColorScheme } from "../theme/useThemeColors";
 import { LinearGradient } from "expo-linear-gradient";
 import { triggerSelection } from "../lib/haptics";
 import { supabase } from "../lib/supabase";
 import { useSupabaseSession } from "../lib/useSupabaseSession";
 import { searchEbayProducts, EbayItem } from "../lib/ebaySearch";
+import { formatPriceRange } from "../lib/currency";
+import { useSettingsStore } from "../store/settingsStore";
+import Toast from "react-native-toast-message";
 import type { CollectionRow } from "./tabs/CollectionsScreen";
+import { useLocalCollectionStore } from "../store/localCollectionStore";
 import { ChevronRight } from "lucide-react-native";
 import CoinIllustration from "../../assets/home/coin.svg";
 
@@ -122,25 +126,7 @@ function formatMintage(m: number | null): string {
   return m.toLocaleString();
 }
 
-function formatPrice(min: number | null, max: number | null): string {
-  if (min != null && max != null)
-    return `$${min.toFixed(2)} - $${max.toFixed(2)}`;
-  if (min != null) return `$${min.toFixed(2)}`;
-  if (max != null) return `$${max.toFixed(2)}`;
-  return "-";
-}
 
-function formatSinglePrice(value: number | null): string {
-  if (value == null) return "-";
-  return `$${value.toFixed(2)}`;
-}
-
-function parseEbayPrice(price: string | null): number | null {
-  if (!price) return null;
-  const normalized = price.replace(/[^0-9.]/g, "");
-  const parsed = Number.parseFloat(normalized);
-  return Number.isFinite(parsed) ? parsed : null;
-}
 
 function gradeValueToPosition(value: number): number {
   if (value <= GRADE_MARKS[0]) return 0;
@@ -160,30 +146,32 @@ function GradeScale({
   value,
   label,
   onInfoPress,
+  colors,
 }: {
   value: number | null;
   label: string | null;
   onInfoPress: () => void;
+  colors: ReturnType<typeof useThemeColors>;
 }) {
   const position =
     value != null ? Math.min(Math.max(gradeValueToPosition(value), 2), 98) : 0;
   return (
     <View style={gradeStyles.container}>
       <View style={gradeStyles.headerRow}>
-        <Text style={gradeStyles.headerLabel}>Coin Grading</Text>
+        <Text style={[gradeStyles.headerLabel, { color: colors.text.textAlt }]}>Coin Grading</Text>
         <View style={gradeStyles.gradeValueRight}>
-          <Text style={gradeStyles.gradeValueLabel}>{label || "-"}</Text>
-          <Text style={gradeStyles.gradeValueNum}> ({value ?? "-"})</Text>
+          <Text style={[gradeStyles.gradeValueLabel, { color: colors.text.textBase }]}>{label || "-"}</Text>
+          <Text style={[gradeStyles.gradeValueNum, { color: colors.text.textBase }]}> ({value ?? "-"})</Text>
           <TouchableOpacity
             onPress={onInfoPress}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={gradeStyles.infoBtn}
           >
-            <Info size={18} color="#999" />
+            <Info size={18} color={colors.text.textTertiary} />
           </TouchableOpacity>
         </View>
       </View>
-      <View style={gradeStyles.scaleBar}>
+      <View style={[gradeStyles.scaleBar, { backgroundColor: colors.surface.onBgAlt }]}>
         <LinearGradient
           colors={["#F59E0B", "#2EDE8E"]}
           start={{ x: 0, y: 0 }}
@@ -197,13 +185,13 @@ function GradeScale({
               { left: `${position}%`, transform: [{ translateX: -1.5 }] },
             ]}
           >
-            <View style={gradeStyles.scaleMarkerLine} />
+            <View style={[gradeStyles.scaleMarkerLine, { backgroundColor: colors.text.textBase }]} />
           </View>
         )}
       </View>
       <View style={gradeStyles.scaleLabels}>
         {GRADE_MARKS.map((m) => (
-          <Text key={m} style={gradeStyles.scaleLabelText}>
+          <Text key={m} style={[gradeStyles.scaleLabelText, { color: colors.text.textTertiary }]}>
             {m}
           </Text>
         ))}
@@ -212,11 +200,19 @@ function GradeScale({
   );
 }
 
-function SpecRow({ label, value }: { label: string; value: string | null }) {
+function SpecRow({
+  label,
+  value,
+  colors,
+}: {
+  label: string;
+  value: string | null;
+  colors: ReturnType<typeof useThemeColors>;
+}) {
   return (
-    <View style={specStyles.row}>
-      <Text style={specStyles.label}>{label}:</Text>
-      <Text style={specStyles.value}>{value || "-"}</Text>
+    <View style={[specStyles.row, { borderBottomColor: colors.border.border2 }]}>
+      <Text style={[specStyles.label, { color: colors.text.textAlt }]}>{label}:</Text>
+      <Text style={[specStyles.value, { color: colors.text.textBase }]}>{value || "-"}</Text>
     </View>
   );
 }
@@ -224,11 +220,18 @@ function SpecRow({ label, value }: { label: string; value: string | null }) {
 export default function ScanResultScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
+  const colorScheme = useEffectiveColorScheme();
+  const gradingScaleImage =
+    colorScheme === "dark"
+      ? require("../../assets/home/grandingScale.dark.png")
+      : require("../../assets/home/grandingScale.png");
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
   const coin: CoinData = route.params.coin;
   const { session } = useSupabaseSession();
   const userId = session?.user?.id;
+  const currency = useSettingsStore((s) => s.currency);
+  const { generalCoinIds, addCoinToGeneral, addCoin, addToSnapHistory } = useLocalCollectionStore();
 
   const [activeTab, setActiveTab] = useState<TabKey>("Details");
   const [historyExpanded, setHistoryExpanded] = useState(false);
@@ -266,22 +269,27 @@ export default function ScanResultScreen() {
   const isUserTap = useRef(false);
 
   const coinInCollection = useMemo(() => {
-    return collections.find((c) => c.coin_ids?.includes(coin.id)) ?? null;
-  }, [collections, coin.id]);
+    // Check Supabase collections first (for logged-in users)
+    const supabaseCollection = collections.find((c) => c.coin_ids?.includes(coin.id));
+    if (supabaseCollection) return supabaseCollection;
+    
+    // Check local General collection (for non-logged users)
+    if (!userId && generalCoinIds.includes(coin.id)) {
+      return {
+        id: -1,
+        name: 'General',
+        description: null,
+        coin_ids: generalCoinIds,
+        user_id: '',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_default: true,
+      } as CollectionRow;
+    }
+    
+    return null;
+  }, [collections, coin.id, userId, generalCoinIds]);
 
-  const ebayPrices = useMemo(
-    () =>
-      ebayItems
-        .map((item) => parseEbayPrice(item.price))
-        .filter((price): price is number => price != null),
-    [ebayItems],
-  );
-
-  const averageEbayPrice = useMemo(() => {
-    if (ebayPrices.length === 0) return null;
-    const total = ebayPrices.reduce((sum, price) => sum + price, 0);
-    return total / ebayPrices.length;
-  }, [ebayPrices]);
 
   const allCoinIds = useMemo(() => {
     const ids = new Set<number>();
@@ -308,6 +316,38 @@ export default function ScanResultScreen() {
       fetchCollections();
     }, [fetchCollections]),
   );
+
+  // Add to local snap history for non-logged users
+  useEffect(() => {
+    if (!userId && coin?.id) {
+      addCoin({
+        id: coin.id,
+        name: coin.name,
+        country: coin.country,
+        year_start: coin.year_start,
+        year_end: coin.year_end,
+        front_image_url: coin.front_image_url,
+        back_image_url: coin.back_image_url,
+        mintage: coin.mintage,
+        composition: coin.composition,
+        estimated_price_min: coin.estimated_price_min,
+        estimated_price_max: coin.estimated_price_max,
+        grade_label: coin.grade_label,
+        grade_value: coin.grade_value,
+        denomination: coin.denomination,
+        metal_composition_detailed: coin.metal_composition_detailed,
+        weight_grams: coin.weight_grams,
+        diameter_mm: coin.diameter_mm,
+        thickness_mm: coin.thickness_mm,
+        edge_type: coin.edge_type,
+        designer: coin.designer,
+        history_description: coin.history_description,
+        ai_opinion: coin.ai_opinion,
+        created_at: new Date().toISOString(),
+      });
+      addToSnapHistory(coin.id);
+    }
+  }, [coin?.id, userId]);
 
   useEffect(() => {
     if (allCoinIds.length === 0) {
@@ -396,10 +436,34 @@ export default function ScanResultScreen() {
   const handleAddToCollection = () => {
     triggerSelection();
     if (!userId) {
-      Alert.alert(
-        "Sign in required",
-        "Please sign in to add coins to your collection.",
-      );
+      // Add to local General collection for non-logged users
+      addCoin({
+        id: coin.id,
+        name: coin.name,
+        country: coin.country,
+        year_start: coin.year_start,
+        year_end: coin.year_end,
+        front_image_url: coin.front_image_url,
+        back_image_url: coin.back_image_url,
+        mintage: coin.mintage,
+        composition: coin.composition,
+        estimated_price_min: coin.estimated_price_min,
+        estimated_price_max: coin.estimated_price_max,
+        grade_label: coin.grade_label,
+        grade_value: coin.grade_value,
+        denomination: coin.denomination,
+        metal_composition_detailed: coin.metal_composition_detailed,
+        weight_grams: coin.weight_grams,
+        diameter_mm: coin.diameter_mm,
+        thickness_mm: coin.thickness_mm,
+        edge_type: coin.edge_type,
+        designer: coin.designer,
+        history_description: coin.history_description,
+        ai_opinion: coin.ai_opinion,
+        created_at: new Date().toISOString(),
+      });
+      addCoinToGeneral(coin.id);
+      Toast.show({ type: 'success', text1: 'Added to General collection' });
       return;
     }
     addToSheetRef.current?.expand();
@@ -415,20 +479,52 @@ export default function ScanResultScreen() {
     if (!selectedCollectionId) return;
     const col = collections.find((c) => c.id === selectedCollectionId);
     if (!col) return;
-    const newIds = [...(col.coin_ids || []), coin.id];
-    await supabase
-      .from("collections")
-      .update({ coin_ids: newIds, updated_at: new Date().toISOString() })
-      .eq("id", col.id);
+
+    // If coin is already in another collection, remove it first
+    if (coinInCollection && coinInCollection.id !== selectedCollectionId) {
+      const oldIds = (coinInCollection.coin_ids || []).filter(
+        (id) => id !== coin.id,
+      );
+      await supabase
+        .from("collections")
+        .update({ coin_ids: oldIds, updated_at: new Date().toISOString() })
+        .eq("id", coinInCollection.id);
+    }
+
+    // Add to new collection (if not already there)
+    if (!(col.coin_ids || []).includes(coin.id)) {
+      const newIds = [...(col.coin_ids || []), coin.id];
+      await supabase
+        .from("collections")
+        .update({ coin_ids: newIds, updated_at: new Date().toISOString() })
+        .eq("id", col.id);
+    }
+
     addToSheetRef.current?.close();
     setSelectedCollectionId(null);
     fetchCollections();
-    Alert.alert("Added", `Coin added to "${col.name}"`);
+
+    const message = coinInCollection
+      ? `Coin moved to "${col.name}"`
+      : `Coin added to "${col.name}"`;
+    Alert.alert(coinInCollection ? "Moved" : "Added", message);
   };
 
   const handleCreateAndAdd = async () => {
     if (!newCollectionName.trim() || !userId) return;
     setCreating(true);
+
+    // If coin is in another collection, remove it first
+    if (coinInCollection) {
+      const oldIds = (coinInCollection.coin_ids || []).filter(
+        (id) => id !== coin.id,
+      );
+      await supabase
+        .from("collections")
+        .update({ coin_ids: oldIds, updated_at: new Date().toISOString() })
+        .eq("id", coinInCollection.id);
+    }
+
     const { data, error } = await supabase
       .from("collections")
       .insert({
@@ -443,10 +539,7 @@ export default function ScanResultScreen() {
       newCollectionSheetRef.current?.close();
       setNewCollectionName("");
       fetchCollections();
-      Alert.alert(
-        "Created",
-        `Collection "${data.name}" created and coin added.`,
-      );
+      Toast.show({ type: "success", text1: "Collection created successfully" });
     } else {
       Alert.alert("Error", "Failed to create collection.");
     }
@@ -484,16 +577,15 @@ export default function ScanResultScreen() {
   );
 
   const yearStr = formatYear(coin.year_start, coin.year_end);
-  const displayPrice = ebayLoading
-    ? null
-    : averageEbayPrice != null
-      ? formatSinglePrice(averageEbayPrice)
-      : formatPrice(coin.estimated_price_min, coin.estimated_price_max);
-  const priceSubtext = ebayLoading
-    ? null
-    : averageEbayPrice != null
-      ? `Average of ${ebayPrices.length} eBay listings`
-      : "Estimated price";
+  const displayPrice = formatPriceRange(
+    coin.estimated_price_min,
+    coin.estimated_price_max,
+    currency,
+  );
+  const priceSubtext =
+    coin.estimated_price_min != null || coin.estimated_price_max != null
+      ? "Market value"
+      : null;
 
   const scrollToSection = (tab: TabKey) => {
     triggerSelection();
@@ -614,7 +706,7 @@ export default function ScanResultScreen() {
             <View
               style={[
                 styles.statCard,
-                { backgroundColor: colors.background.bgAlt },
+                { backgroundColor: colors.surface.onBgBase },
               ]}
             >
               <Text style={[styles.statValue, { color: colors.text.textBase }]}>
@@ -627,7 +719,7 @@ export default function ScanResultScreen() {
             <View
               style={[
                 styles.statCard,
-                { backgroundColor: colors.background.bgAlt },
+                { backgroundColor: colors.surface.onBgBase },
               ]}
             >
               <Text
@@ -650,42 +742,20 @@ export default function ScanResultScreen() {
             ]}
           >
             <View style={[styles.priceSection]}>
-              {displayPrice ? (
-                <>
-                  <Text
-                    style={[styles.priceText, { color: colors.text.textBase }]}
-                  >
-                    {displayPrice}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.priceSubtext,
-                      { color: colors.text.textAlt },
-                    ]}
-                  >
-                    {priceSubtext}
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <View
-                    style={{
-                      width: 160,
-                      height: 28,
-                      borderRadius: 8,
-                      backgroundColor: colors.surface.onBgAlt,
-                      marginBottom: 6,
-                    }}
-                  />
-                  <View
-                    style={{
-                      width: 120,
-                      height: 14,
-                      borderRadius: 6,
-                      backgroundColor: colors.surface.onBgAlt,
-                    }}
-                  />
-                </>
+              <Text
+                style={[styles.priceText, { color: colors.text.textBase }]}
+              >
+                {displayPrice}
+              </Text>
+              {priceSubtext && (
+                <Text
+                  style={[
+                    styles.priceSubtext,
+                    { color: colors.text.textAlt },
+                  ]}
+                >
+                  {priceSubtext}
+                </Text>
               )}
             </View>
 
@@ -693,6 +763,7 @@ export default function ScanResultScreen() {
               value={coin.grade_value}
               label={coin.grade_label}
               onInfoPress={() => guideSheetRef.current?.expand()}
+              colors={colors}
             />
           </View>
         </View>
@@ -777,21 +848,24 @@ export default function ScanResultScreen() {
             >
               Specifications
             </Text>
-            <SpecRow label="Denomination" value={coin.denomination} />
-            <SpecRow label="Metal" value={coin.metal_composition_detailed} />
+            <SpecRow label="Denomination" value={coin.denomination} colors={colors} />
+            <SpecRow label="Metal" value={coin.metal_composition_detailed} colors={colors} />
             <SpecRow
               label="Weight"
               value={coin.weight_grams ? `${coin.weight_grams} grams` : null}
+              colors={colors}
             />
             <SpecRow
               label="Diameter"
               value={coin.diameter_mm ? `${coin.diameter_mm} mm` : null}
+              colors={colors}
             />
             <SpecRow
               label="Thickness"
               value={coin.thickness_mm ? `~${coin.thickness_mm} mm` : null}
+              colors={colors}
             />
-            <SpecRow label="Edge" value={coin.edge_type} />
+            <SpecRow label="Edge" value={coin.edge_type} colors={colors} />
           </View>
 
           {/* Dimensions */}
@@ -1020,7 +1094,7 @@ export default function ScanResultScreen() {
           styles.bottomCta,
           {
             paddingBottom: insets.bottom + 12,
-            backgroundColor: colors.background.bgBase,
+            backgroundColor: colors.surface.onBgBase,
           },
         ]}
       >
@@ -1033,7 +1107,7 @@ export default function ScanResultScreen() {
             onPress={handleSeeCollection}
             activeOpacity={0.8}
           >
-            <Text style={styles.addBtnText}>See your Collection</Text>
+            <Text style={[styles.addBtnText, { color: colors.text.textInverse }]}>See your Collection</Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
@@ -1044,8 +1118,8 @@ export default function ScanResultScreen() {
             onPress={handleAddToCollection}
             activeOpacity={0.8}
           >
-            <Plus size={20} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.addBtnText}>Add to Collection</Text>
+            <Plus size={20} color={colors.text.textInverse} style={{ marginRight: 8 }} />
+            <Text style={[styles.addBtnText, { color: colors.text.textInverse }]}>Add to Collection</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -1057,7 +1131,7 @@ export default function ScanResultScreen() {
         snapPoints={[220]}
         enablePanDownToClose
         backdropComponent={renderBackdrop}
-        backgroundStyle={{ backgroundColor: colors.background.bgBase }}
+        backgroundStyle={{ backgroundColor: colors.surface.onBgBase }}
         handleIndicatorStyle={{
           backgroundColor: colors.border.border3,
           width: 36,
@@ -1065,13 +1139,13 @@ export default function ScanResultScreen() {
           borderRadius: 2,
         }}
       >
-        <BottomSheetView style={sheetStyles.container}>
+        <BottomSheetView style={[sheetStyles.container, {paddingLeft: 20}]}>
           <TouchableOpacity style={sheetStyles.row} onPress={openAddToSheet}>
             <FolderPlus size={22} color={colors.text.textBase} />
             <Text
               style={[sheetStyles.rowText, { color: colors.text.textBase }]}
             >
-              Add to
+              {coinInCollection ? "Change collection" : "Add to"}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity style={sheetStyles.row} onPress={openGuideSheet}>
@@ -1083,8 +1157,8 @@ export default function ScanResultScreen() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity style={sheetStyles.row} onPress={handleDelete}>
-            <Trash2 size={22} color="#E53935" />
-            <Text style={[sheetStyles.rowText, { color: "#E53935" }]}>
+            <Trash2 size={22} color={colors.state.red} />
+            <Text style={[sheetStyles.rowText, { color: colors.state.red }]}>
               Delete
             </Text>
           </TouchableOpacity>
@@ -1111,7 +1185,7 @@ export default function ScanResultScreen() {
         <BottomSheetView style={sheetStyles.container}>
           <View style={sheetStyles.headerRow}>
             <Text style={[sheetStyles.title, { color: colors.text.textBase }]}>
-              Add to
+              {coinInCollection ? "Change collection" : "Add to"}
             </Text>
             <TouchableOpacity onPress={() => addToSheetRef.current?.close()}>
               <X size={24} color={colors.text.textBase} />
@@ -1241,7 +1315,7 @@ export default function ScanResultScreen() {
               sheetStyles.confirmBtn,
               {
                 backgroundColor: selectedCollectionId
-                  ? "#1C1C1E"
+                  ? colors.background.bgInverse
                   : colors.border.border3,
               },
             ]}
@@ -1254,7 +1328,7 @@ export default function ScanResultScreen() {
                 sheetStyles.confirmBtnText,
                 {
                   color: selectedCollectionId
-                    ? "#fff"
+                    ? colors.text.textInverse
                     : colors.text.textTertiary,
                 },
               ]}
@@ -1269,10 +1343,10 @@ export default function ScanResultScreen() {
       <BottomSheet
         ref={guideSheetRef}
         index={-1}
-        snapPoints={["60%"]}
+        snapPoints={["55%"]}
         enablePanDownToClose
         backdropComponent={renderBackdrop}
-        backgroundStyle={{ backgroundColor: colors.background.bgBase }}
+        backgroundStyle={{ backgroundColor: colors.surface.onBgBase }}
         handleIndicatorStyle={{ backgroundColor: colors.border.border3 }}
       >
         <BottomSheetView style={sheetStyles.guideContainer}>
@@ -1290,22 +1364,11 @@ export default function ScanResultScreen() {
             The standard system for grading numismatic coins from Poor (1) - to
             Perfect (70)
           </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={sheetStyles.guideCoinsScroll}
-            contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
-          >
-            {[coin.front_image_url, coin.back_image_url]
-              .filter(Boolean)
-              .map((url, idx) => (
-                <Image
-                  key={idx}
-                  source={{ uri: url! }}
-                  style={sheetStyles.guideCoinImg}
-                />
-              ))}
-          </ScrollView>
+          <Image
+            source={gradingScaleImage}
+            style={sheetStyles.guideCoinImg}
+            resizeMode="cover"
+          />
           <Text
             style={[
               sheetStyles.guideGradeText,
@@ -1326,12 +1389,12 @@ export default function ScanResultScreen() {
           <TouchableOpacity
             style={[
               sheetStyles.confirmBtn,
-              { backgroundColor: "#1C1C1E", marginTop: 20 },
+              { backgroundColor: colors.background.bgInverse, marginTop: 20 },
             ]}
             onPress={() => guideSheetRef.current?.close()}
             activeOpacity={0.8}
           >
-            <Text style={sheetStyles.confirmBtnText}>Understand</Text>
+            <Text style={[sheetStyles.confirmBtnText, { color: colors.text.textInverse }]}>Understand</Text>
           </TouchableOpacity>
         </BottomSheetView>
       </BottomSheet>
@@ -1411,7 +1474,7 @@ export default function ScanResultScreen() {
               activeOpacity={0.8}
             >
               {creating ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <ActivityIndicator size="small" color={colors.text.textInverse} />
               ) : (
                 <Text
                   style={[
@@ -1628,7 +1691,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
   },
-  addBtnText: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  addBtnText: { fontSize: 17, fontWeight: "700" },
 });
 
 const gradeStyles = StyleSheet.create({
@@ -1639,14 +1702,13 @@ const gradeStyles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 10,
   },
-  headerLabel: { fontSize: 14, fontWeight: "500", color: "#666" },
+  headerLabel: { fontSize: 14, fontWeight: "500" },
   gradeValueRight: { flexDirection: "row", alignItems: "center" },
-  gradeValueLabel: { fontSize: 14, color: "#333", fontWeight: "500" },
-  gradeValueNum: { fontSize: 14, color: "#333" },
+  gradeValueLabel: { fontSize: 14, fontWeight: "500" },
+  gradeValueNum: { fontSize: 14 },
   infoBtn: { marginLeft: 6 },
   scaleBar: {
     height: 8,
-    backgroundColor: "#E8E8E8",
     borderRadius: 4,
     marginBottom: 8,
     position: "relative",
@@ -1665,10 +1727,9 @@ const gradeStyles = StyleSheet.create({
     width: 3,
     height: 16,
     borderRadius: 1.5,
-    backgroundColor: "#1C1917",
   },
   scaleLabels: { flexDirection: "row", justifyContent: "space-between" },
-  scaleLabelText: { fontSize: 11, color: "#999" },
+  scaleLabelText: { fontSize: 11 },
 });
 
 const specStyles = StyleSheet.create({
@@ -1677,12 +1738,10 @@ const specStyles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#eee",
   },
-  label: { fontSize: 14, color: "#666" },
+  label: { fontSize: 14 },
   value: {
     fontSize: 14,
-    color: "#333",
     fontWeight: "500",
     textAlign: "right",
     flex: 1,
@@ -1729,7 +1788,6 @@ const sheetStyles = StyleSheet.create({
     height: 44,
     borderRadius: 22,
     borderWidth: 2,
-    borderColor: "#fff",
   },
   newFolderRow: {
     flexDirection: "row",
@@ -1752,6 +1810,7 @@ const sheetStyles = StyleSheet.create({
   },
   confirmBtn: {
     borderRadius: 18,
+    width: "90%",
     paddingVertical: 16,
     alignItems: "center",
     marginHorizontal: 24,
@@ -1759,7 +1818,6 @@ const sheetStyles = StyleSheet.create({
     marginBottom: 20,
   },
   confirmBtnText: {
-    color: "#fff",
     fontSize: 17,
     fontWeight: "700",
     paddingHorizontal: 20,
@@ -1773,26 +1831,28 @@ const sheetStyles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 16,
   },
-  guideContainer: { flex: 1, paddingHorizontal: 20, alignItems: "center" },
+  guideContainer: { flex: 1, paddingHorizontal: 0, alignItems: "center" },
   newCollectionContainer: { flex: 1 },
   newCollectionBody: { paddingHorizontal: 24, paddingTop: 18 },
   newCollectionFooter: {
     marginTop: "auto",
   },
   guideTitle: {
+    paddingHorizontal: 20,
     fontSize: 20,
     fontWeight: "700",
     textAlign: "center",
     marginBottom: 8,
   },
   guideSubtitle: {
+    paddingHorizontal: 20,
     fontSize: 14,
     textAlign: "center",
     marginBottom: 20,
     lineHeight: 20,
   },
-  guideCoinsScroll: { marginBottom: 20 },
-  guideCoinImg: { width: 80, height: 80, borderRadius: 40 },
-  guideGradeText: { fontSize: 18, fontWeight: "700", marginBottom: 8 },
-  guideGradeDesc: { fontSize: 14, textAlign: "center", lineHeight: 20 },
+  guideCoinsScroll: { marginBottom: 20, paddingHorizontal: 20, },
+  guideCoinImg: { width: "100%", height: 144, marginBottom: 24 },
+  guideGradeText: { fontSize: 18, fontWeight: "700", marginBottom: 8, paddingHorizontal: 20, },
+  guideGradeDesc: { fontSize: 14, textAlign: "center", lineHeight: 20, paddingHorizontal: 20, },
 });

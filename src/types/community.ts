@@ -70,3 +70,14 @@ export function formatPostDate(iso: string): string {
     return '';
   }
 }
+
+export function formatPostTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  } catch {
+    return '';
+  }
+}

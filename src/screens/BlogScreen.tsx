@@ -10,13 +10,12 @@ import {
   Pressable,
   Animated,
   Easing,
-  useColorScheme,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { ChevronLeft } from 'lucide-react-native';
-import { useThemeColors } from '../theme/useThemeColors';
+import { useThemeColors, useEffectiveColorScheme } from '../theme/useThemeColors';
 import { supabase } from '../lib/supabase';
 import type { BlogPost, BlogCategory } from '../types/blog';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -178,11 +177,11 @@ export default function BlogScreen() {
     }
   };
 
-  const colorScheme = useColorScheme();
+  const colorScheme = useEffectiveColorScheme();
   const statusBarStyle = colorScheme === 'dark' ? 'light' : 'dark';
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background.bgBase }]}>
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background.bgBaseElevated }]}>
       <StatusBar style={statusBarStyle} />
       <View style={styles.header}>
         <TouchableOpacity
@@ -197,7 +196,7 @@ export default function BlogScreen() {
       </View>
 
       <View style={[styles.tabRow, { paddingHorizontal: TAB_ROW_PADDING }]}>
-        <View style={[styles.tabRail, { backgroundColor: colors.border.border2 }]} />
+        <View style={[styles.tabRail, { backgroundColor: colors.border.border3 }]} />
         <View style={styles.tabRowInner}>
           {tabs.map((tab, idx) => (
             <Pressable

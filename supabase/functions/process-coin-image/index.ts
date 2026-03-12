@@ -13,17 +13,6 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        {
-          status: 401,
-          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-        }
-      );
-    }
-
     const { imageBase64 } = await req.json();
     if (!imageBase64) {
       return new Response(
@@ -49,10 +38,11 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Convert base64 to binary
-    const binaryData = Uint8Array.from(atob(imageBase64), (c) =>
-      c.charCodeAt(0)
-    );
+    const raw = atob(imageBase64);
+    const binaryData = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) {
+      binaryData[i] = raw.charCodeAt(i);
+    }
 
     // Call Hugging Face Inference API (free)
     const hfResponse = await fetch(
@@ -84,16 +74,16 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // HF returns the mask/processed image as PNG binary
     const resultBuffer = await hfResponse.arrayBuffer();
     const resultBytes = new Uint8Array(resultBuffer);
 
-    // Now composite: use the mask to place coin on white background
-    // The RMBG model returns a PNG with transparency
-    // We convert to base64 and return
-    const processedBase64 = btoa(
-      String.fromCharCode(...resultBytes)
-    );
+    // Convert to base64 in chunks to avoid max call stack overflow
+    const CHUNK = 8192;
+    let binaryStr = "";
+    for (let i = 0; i < resultBytes.length; i += CHUNK) {
+      binaryStr += String.fromCharCode(...resultBytes.subarray(i, i + CHUNK));
+    }
+    const processedBase64 = btoa(binaryStr);
 
     return new Response(JSON.stringify({ processedBase64 }), {
       status: 200,

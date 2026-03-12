@@ -10,9 +10,11 @@ const SYSTEM_PROMPT = `You are an expert numismatist and coin specialist assista
 - Collecting tips and strategies
 - Mintage and rarity information
 
-IMPORTANT LANGUAGE RULE: You MUST respond in the same language as the user's message. If the user writes in Uzbek, respond in Uzbek. If in Russian, respond in Russian. If in English, respond in English. Always match the user's language exactly.
+LANGUAGE: Respond ONLY in the same language the user wrote in. If they write in Uzbek, reply in Uzbek. If in Russian, reply in Russian. If in English, reply in English. Do NOT add any translation, "(English Translation)", or second-language version of your answer. One language only.
 
-Be helpful, accurate, and conversational. If analyzing an image, provide detailed observations about the coin's condition, authenticity indicators, and estimated grade.`;
+LENGTH: Keep your response short. Maximum 20-25 lines. Be concise and to the point.
+
+Be helpful, accurate, and conversational. If analyzing an image, provide detailed but brief observations about the coin's condition, authenticity, and estimated grade.`;
 
 type ChatHistory = { role: 'user' | 'model'; text: string }[];
 
@@ -85,7 +87,7 @@ export async function chatWithGemini(
     contents,
     generationConfig: {
       temperature: 0.7,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 1024,
     },
   };
 

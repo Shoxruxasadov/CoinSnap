@@ -17,12 +17,14 @@ import {
 } from 'react-native';
 import { LayoutGrid, List, Plus, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, CommonActions } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../navigation/MainStack';
+import Toast from 'react-native-toast-message';
 import { useThemeColors } from '../../theme/useThemeColors';
 import { supabase } from '../../lib/supabase';
 import { useSupabaseSession } from '../../lib/useSupabaseSession';
+import { useLocalCollectionStore } from '../../store/localCollectionStore';
 
 export type CollectionRow = {
   id: number;
@@ -32,6 +34,7 @@ export type CollectionRow = {
   user_id: string;
   created_at: string;
   updated_at: string;
+  is_default?: boolean;
 };
 
 export type CoinImageRow = {
@@ -63,35 +66,70 @@ function CollectionCard({
   const miniCoinStyle = isList ? styles.miniCoinList : styles.miniCoin;
   const Wrapper = Pressable;
 
-  const imageUrls = useMemo(() => {
-    const urls: (string | null)[] = [];
-    lastTwoCoins.forEach((c) => {
-      if (c.front_image_url) urls.push(c.front_image_url);
-      if (c.back_image_url) urls.push(c.back_image_url);
-    });
-    return urls;
-  }, [lastTwoCoins]);
-
   const renderCoins = () => {
-    if (imageUrls.length === 0) {
+    const placeholderStyle = [miniCoinStyle, styles.coinPlaceholder, { borderColor: colors.surface.onBgBase, backgroundColor: colors.border.border3 }];
+    
+    // 0 items: 4 empty placeholders
+    if (items === 0 || lastTwoCoins.length === 0) {
       return (
         <>
-          <View style={[miniCoinStyle, styles.coinPlaceholder, { borderColor: colors.surface.onBgBase, backgroundColor: colors.border.border3 }]} />
-          <View style={[miniCoinStyle, styles.coinPlaceholder, { borderColor: colors.surface.onBgBase, backgroundColor: colors.border.border3 }]} />
-          <View style={[miniCoinStyle, styles.coinPlaceholder, { borderColor: colors.surface.onBgBase, backgroundColor: colors.border.border3 }]} />
-          <View style={[miniCoinStyle, styles.coinPlaceholder, { borderColor: colors.surface.onBgBase, backgroundColor: colors.border.border3 }]} />
+          <View style={placeholderStyle} />
+          <View style={placeholderStyle} />
+          <View style={placeholderStyle} />
+          <View style={placeholderStyle} />
         </>
       );
     }
-    return imageUrls.map((url, i) => (
-      <View key={i} style={[miniCoinStyle, { borderColor: colors.background.bgWhite, overflow: 'hidden' }]}>
-        {url ? (
-          <Image source={{ uri: url }} style={styles.miniCoinImage} resizeMode="cover" />
-        ) : (
-          <View style={[StyleSheet.absoluteFill, styles.coinPlaceholder, { backgroundColor: colors.border.border3 }]} />
-        )}
-      </View>
-    ));
+    
+    // 1 item: front+back + 2 placeholders
+    if (items === 1 || lastTwoCoins.length === 1) {
+      const coin = lastTwoCoins[0];
+      return (
+        <>
+          <View style={[miniCoinStyle, { borderColor: colors.surface.onBgBase, overflow: 'hidden' }]}>
+            {coin.front_image_url ? (
+              <Image source={{ uri: coin.front_image_url }} style={styles.miniCoinImage} resizeMode="cover" />
+            ) : (
+              <View style={[StyleSheet.absoluteFill, styles.coinPlaceholder, { backgroundColor: colors.border.border3 }]} />
+            )}
+          </View>
+          <View style={[miniCoinStyle, { borderColor: colors.surface.onBgBase, overflow: 'hidden' }]}>
+            {coin.back_image_url ? (
+              <Image source={{ uri: coin.back_image_url }} style={styles.miniCoinImage} resizeMode="cover" />
+            ) : (
+              <View style={[StyleSheet.absoluteFill, styles.coinPlaceholder, { backgroundColor: colors.border.border3 }]} />
+            )}
+          </View>
+          <View style={placeholderStyle} />
+          <View style={placeholderStyle} />
+        </>
+      );
+    }
+    
+    // 2+ items: last 2 coins' front+back images
+    const lastTwo = lastTwoCoins.slice(-2);
+    return (
+      <>
+        {lastTwo.map((coin, i) => (
+          <React.Fragment key={i}>
+            <View style={[miniCoinStyle, { borderColor: colors.surface.onBgBase, overflow: 'hidden' }]}>
+              {coin.front_image_url ? (
+                <Image source={{ uri: coin.front_image_url }} style={styles.miniCoinImage} resizeMode="cover" />
+              ) : (
+                <View style={[StyleSheet.absoluteFill, styles.coinPlaceholder, { backgroundColor: colors.border.border3 }]} />
+              )}
+            </View>
+            <View style={[miniCoinStyle, { borderColor: colors.surface.onBgBase, overflow: 'hidden' }]}>
+              {coin.back_image_url ? (
+                <Image source={{ uri: coin.back_image_url }} style={styles.miniCoinImage} resizeMode="cover" />
+              ) : (
+                <View style={[StyleSheet.absoluteFill, styles.coinPlaceholder, { backgroundColor: colors.border.border3 }]} />
+              )}
+            </View>
+          </React.Fragment>
+        ))}
+      </>
+    );
   };
 
   if (isList) {
@@ -127,6 +165,7 @@ export default function CollectionsScreen() {
   const navigation = useNavigation();
   const stackNav = navigation.getParent() as NativeStackNavigationProp<MainStackParamList> | undefined;
   const { session } = useSupabaseSession();
+  const { generalCoinIds, coins: localCoins } = useLocalCollectionStore();
   const [viewMode, setViewMode] = React.useState<ViewMode>('grid');
   const [collections, setCollections] = useState<CollectionRow[]>([]);
   const [coinsMap, setCoinsMap] = useState<Record<number, CoinImageRow>>({});
@@ -141,28 +180,62 @@ export default function CollectionsScreen() {
     stackNav?.navigate('CollectionDetail', { collection: c });
   };
 
+  const localGeneralCollection: CollectionRow = useMemo(() => ({
+    id: -1,
+    name: 'General',
+    description: null,
+    coin_ids: generalCoinIds,
+    user_id: '',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    is_default: true,
+  }), [generalCoinIds]);
+
   const fetchCollections = useCallback(async (showLoading = false) => {
     if (!session?.user?.id) {
-      setCollections([]);
-      setCoinsMap({});
+      setCollections([localGeneralCollection]);
+      // Build coinsMap from local coins
+      const localCoinsMap: Record<number, CoinImageRow> = {};
+      localCoins.forEach((c) => {
+        localCoinsMap[c.id] = {
+          id: c.id,
+          front_image_url: c.front_image_url,
+          back_image_url: c.back_image_url,
+        };
+      });
+      setCoinsMap(localCoinsMap);
       setLoading(false);
+      setRefreshing(false);
       return;
     }
-    
+
     if (showLoading) setLoading(true);
-    
+
     const { data, error } = await supabase
       .from('collections')
-      .select('id, name, description, coin_ids, user_id, created_at, updated_at')
+      .select('id, name, description, coin_ids, user_id, created_at, updated_at, is_default')
       .eq('user_id', session.user.id)
       .order('created_at', { ascending: true });
-    
+
+    if (!error) {
+      let rows = (data as CollectionRow[]) ?? [];
+
+      if (!rows.some((c) => c.is_default)) {
+        const { data: created } = await supabase
+          .from('collections')
+          .insert({ user_id: session.user.id, name: 'General', coin_ids: [], is_default: true })
+          .select()
+          .single();
+        if (created) {
+          rows = [created as CollectionRow, ...rows];
+        }
+      }
+
+      setCollections(rows);
+    }
+
     setLoading(false);
     setRefreshing(false);
-    
-    if (!error) {
-      setCollections((data as CollectionRow[]) ?? []);
-    }
   }, [session?.user?.id]);
 
   const onRefresh = useCallback(() => {
@@ -172,13 +245,20 @@ export default function CollectionsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      fetchCollections(collections.length === 0);
+      fetchCollections(false);
     }, [fetchCollections])
   );
 
   useEffect(() => {
     fetchCollections(true);
   }, [session?.user?.id]);
+
+  // Update local collection when generalCoinIds changes (for non-logged users)
+  useEffect(() => {
+    if (!session?.user?.id) {
+      setCollections([localGeneralCollection]);
+    }
+  }, [generalCoinIds, session?.user?.id, localGeneralCollection]);
 
   const allCoinIds = useMemo(() => {
     const set = new Set<number>();
@@ -218,6 +298,10 @@ export default function CollectionsScreen() {
   };
 
   const openModal = () => {
+    if (!session?.user?.id) {
+      navigation.dispatch(CommonActions.navigate({ name: 'GetStarted' }));
+      return;
+    }
     setCollectionName('');
     setModalVisible(true);
   };
@@ -242,6 +326,7 @@ export default function CollectionsScreen() {
       Alert.alert('Error', error.message);
       return;
     }
+    Toast.show({ type: 'success', text1: 'Collection created successfully' });
     closeModal();
     fetchCollections();
   };
@@ -276,11 +361,13 @@ export default function CollectionsScreen() {
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={colors.text.textBase}
-            />
+            session?.user?.id ? (
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={colors.text.textBase}
+              />
+            ) : undefined
           }
         >
           {isGrid ? (
@@ -341,7 +428,7 @@ export default function CollectionsScreen() {
             style={styles.modalKeyboard}
           >
             <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
-              <View style={[styles.modalContent, { backgroundColor: colors.background.bgWhite }]}>
+              <View style={[styles.modalContent, { backgroundColor: colors.surface.onBgBase }]}>
                 <View style={styles.modalHeader}>
                   <Text style={[styles.modalTitle, { color: colors.text.textBase }]}>New Collection</Text>
                   <TouchableOpacity onPress={closeModal} hitSlop={12} style={styles.modalCloseBtn}>
@@ -374,7 +461,7 @@ export default function CollectionsScreen() {
                   {creating ? (
                     <ActivityIndicator size="small" color={colors.text.textInverse} />
                   ) : (
-                    <Text style={[styles.modalCreateBtnText, { color: colors.text.textWhite }]}>Create</Text>
+                    <Text style={[styles.modalCreateBtnText, { color: colors.text.textInverse }]}>Create</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -485,8 +572,6 @@ const styles = StyleSheet.create({
     marginLeft: -10,
     borderWidth: 2,
   },
-  coinSilver: { backgroundColor: '#c0c0c0' },
-  coinGold: { backgroundColor: '#d4af37' },
   coinPlaceholder: {},
   miniCoinImage: {
     width: '100%',

@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { X, Send, ImagePlus } from 'lucide-react-native';
+import { X, Send, ImagePlus ,ChevronLeft} from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -22,6 +22,7 @@ import { decode } from 'base64-arraybuffer';
 import type { MainStackParamList } from '../navigation/MainStack';
 import { supabase } from '../lib/supabase';
 import { useSupabaseSession } from '../lib/useSupabaseSession';
+import Toast from 'react-native-toast-message';
 import { triggerSelection, triggerImpact } from '../lib/haptics';
 import { useThemeColors } from '../theme/useThemeColors';
 
@@ -170,6 +171,10 @@ export default function CommunityNewPostScreen() {
         );
       }
 
+      Toast.show({
+        type: 'success',
+        text1: editPost ? 'Post updated' : 'Your post successfully uploaded',
+      });
       navigation.goBack();
     } catch (err) {
       console.error(editPost ? 'Error updating post:' : 'Error creating post:', err);
@@ -186,7 +191,7 @@ export default function CommunityNewPostScreen() {
     >
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity style={styles.closeBtn} onPress={handleClose}>
-          <X size={24} color={colors.text.textBase} />
+        <ChevronLeft size={28} color={colors.text.textBase} />
         </TouchableOpacity>
         <View style={{ flex: 1 }} />
         <TouchableOpacity

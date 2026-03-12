@@ -22,6 +22,7 @@ type Nav = NativeStackNavigationProp<MainStackParamList>;
 import { supabase } from '../lib/supabase';
 import { useSupabaseSession } from '../lib/useSupabaseSession';
 import type { CollectionRow } from './tabs/CollectionsScreen';
+import { useLocalCollectionStore } from '../store/localCollectionStore';
 import SearchEmptyIcon from '../../assets/empty/search.svg';
 
 export type ScannedCoinRow = {
@@ -63,12 +64,6 @@ function formatScanDate(iso: string): string {
   }
 }
 
-function formatPriceRange(min: number | null, max: number | null): string {
-  if (min != null && max != null) return `$${min}-$${max}`;
-  if (min != null) return `$${min}`;
-  if (max != null) return `$${max}`;
-  return '';
-}
 
 const CARD_HEIGHT = 96;
 
@@ -94,9 +89,9 @@ function CoinRow({
       onPress={() => onPress(item)}
       onLongPress={() => onDotsPress(item)}
     >
-      <View style={[styles.coinImagesWrap, { backgroundColor: colors.surface.onBgAlt }]}>
+      <View style={[styles.coinImagesWrap, { backgroundColor: colors.surface.surface }]}>
         {hasFront && (
-          <View style={styles.coinImageBack}>
+          <View style={[styles.coinImageBack, { borderColor: colors.surface.surface }]}>
             <Animated.Image
               source={{ uri: item.front_image_url! }}
               style={styles.coinCircleImage}
@@ -106,7 +101,7 @@ function CoinRow({
           </View>
         )}
         {hasBack && (
-          <View style={styles.coinImageFront}>
+          <View style={[styles.coinImageFront, { borderColor: colors.surface.surface }]}>
             <Animated.Image
               source={{ uri: item.back_image_url! }}
               style={styles.coinCircleImage}
@@ -144,6 +139,7 @@ export default function SnapHistoryScreen() {
   const navigation = useNavigation<Nav>();
   const { session } = useSupabaseSession();
   const userId = session?.user?.id;
+  const { getSnapHistory, removeFromSnapHistory } = useLocalCollectionStore();
   const [coins, setCoins] = useState<ScannedCoinRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [collections, setCollections] = useState<CollectionRow[]>([]);
@@ -161,7 +157,18 @@ export default function SnapHistoryScreen() {
   }, [selectedCoin, collections]);
 
   const fetchCoins = useCallback(() => {
-    if (!userId) { setCoins([]); setLoading(false); return; }
+    if (!userId) {
+      // Load from local storage for non-logged users
+      const localHistory = getSnapHistory();
+      const mapped: ScannedCoinRow[] = localHistory.map((c) => ({
+        ...c,
+        scanned_at: c.created_at,
+        scanned_by_user_id: null,
+      }));
+      setCoins(mapped);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     supabase
       .from('coins').select('*').eq('scanned_by_user_id', userId).order('scanned_at', { ascending: false })
@@ -169,7 +176,7 @@ export default function SnapHistoryScreen() {
         setLoading(false);
         if (!error) setCoins((data as ScannedCoinRow[]) ?? []);
       });
-  }, [userId]);
+  }, [userId, getSnapHistory]);
 
   const fetchCollections = useCallback(() => {
     if (!userId) return;
@@ -206,8 +213,14 @@ export default function SnapHistoryScreen() {
           // Immediately remove from local state for instant UI feedback
           setCoins((prev) => prev.filter((c) => c.id !== coinToDelete.id));
           setSelectedCoin(null);
-          // Then delete from database
-          await supabase.from('coins').delete().eq('id', coinToDelete.id);
+          
+          if (userId) {
+            // Delete from database for logged-in users
+            await supabase.from('coins').delete().eq('id', coinToDelete.id);
+          } else {
+            // Delete from local storage for non-logged users
+            removeFromSnapHistory(coinToDelete.id);
+          }
         },
       },
     ]);
@@ -268,7 +281,7 @@ export default function SnapHistoryScreen() {
         snapPoints={actionSnapPoints}
         enablePanDownToClose
         backdropComponent={renderBackdrop}
-        backgroundStyle={{ backgroundColor: colors.background.bgBase }}
+        backgroundStyle={{ backgroundColor: colors.surface.onBgBase }}
         handleIndicatorStyle={{ backgroundColor: colors.border.border3, width: 36, height: 4, borderRadius: 2 }}
       >
         <BottomSheetView style={actionStyles.container}>
@@ -279,8 +292,8 @@ export default function SnapHistoryScreen() {
             </TouchableOpacity>
           )}
           <TouchableOpacity style={actionStyles.row} onPress={handleDeleteCoin}>
-            <Trash2 size={22} color="#E53935" />
-            <Text style={[actionStyles.rowText, { color: '#E53935' }]}>Delete</Text>
+            <Trash2 size={22} color={colors.state.red} />
+            <Text style={[actionStyles.rowText, { color: colors.state.red }]}>Delete</Text>
           </TouchableOpacity>
         </BottomSheetView>
       </BottomSheet>
@@ -292,7 +305,7 @@ export default function SnapHistoryScreen() {
         snapPoints={addToSnapPoints}
         enablePanDownToClose
         backdropComponent={renderBackdrop}
-        backgroundStyle={{ backgroundColor: colors.background.bgBase }}
+        backgroundStyle={{ backgroundColor: colors.surface.onBgBase }}
         handleIndicatorStyle={{ backgroundColor: colors.border.border3, width: 36, height: 4, borderRadius: 2 }}
       >
         <BottomSheetView style={actionStyles.addToContent}>
@@ -319,12 +332,12 @@ export default function SnapHistoryScreen() {
             })}
           </BottomSheetScrollView>
           <TouchableOpacity
-            style={[actionStyles.confirmBtn, { backgroundColor: selectedCollectionId ? '#1C1C1E' : colors.surface.onBgAlt }]}
+            style={[actionStyles.confirmBtn, { backgroundColor: selectedCollectionId ? colors.background.bgInverse : colors.surface.surface }]}
             onPress={handleConfirmAddTo}
             disabled={!selectedCollectionId}
             activeOpacity={0.8}
           >
-            <Text style={[actionStyles.confirmBtnText, { color: selectedCollectionId ? '#fff' : colors.text.textTertiary }]}>Confirm</Text>
+            <Text style={[actionStyles.confirmBtnText, { color: selectedCollectionId ? colors.text.textInverse : colors.text.textTertiary }]}>Confirm</Text>
           </TouchableOpacity>
         </BottomSheetView>
       </BottomSheet>
@@ -384,43 +397,40 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   coinImagesWrap: {
-    width: 96,
+    width: 100,
     height: 64,
     borderRadius: 14,
-    overflow: 'hidden',
     position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   coinImageBack: {
-    position: 'absolute',
-    left: 8,
-    top: "50%",
-    transform: [{ translateY: "-50%" }],
     width: 48,
     height: 48,
     borderRadius: 24,
     overflow: 'hidden',
+    borderWidth: 2,
+    marginRight: -8,
+    zIndex: 1,
   },
   coinImageFront: {
-    position: 'absolute',
-    right: 8,
-    top: "50%",
-    transform: [{ translateY: "-50%" }],
     width: 48,
     height: 48,
     borderRadius: 24,
     overflow: 'hidden',
+    borderWidth: 2,
+    marginLeft: -8,
+    zIndex: 2,
   },
   coinCircleImage: {
     width: '100%',
     height: '100%',
   },
   coinImagePlaceholder: {
-    position: 'absolute',
-    left: 14,
-    top: 14,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
   },
   coinInfo: {
     flex: 1,

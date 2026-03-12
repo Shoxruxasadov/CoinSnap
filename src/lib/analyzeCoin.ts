@@ -25,13 +25,13 @@ export type CoinAnalysisResult = {
 export async function analyzeCoinInApp(
   frontImageUrl: string,
   backImageUrl: string,
-  userId: string
+  userId?: string | null
 ): Promise<{ coin: any }> {
   const { data, error } = await supabase.functions.invoke('analyze-coin', {
     body: {
       front_image_url: frontImageUrl,
       back_image_url: backImageUrl,
-      user_id: userId,
+      user_id: userId || null,
     },
   });
 

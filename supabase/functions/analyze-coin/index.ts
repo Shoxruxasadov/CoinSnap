@@ -55,6 +55,141 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(parts.join(""));
 }
 
+async function fetchEbayPrices(
+  coinName: string,
+  country: string | null,
+  year: number | null,
+  gradeValue: number | null
+): Promise<{ min: number | null; max: number | null; avg: number | null }> {
+  try {
+    const SANDBOX = Deno.env.get("EBAY_SANDBOX") === "true";
+    const BASE = SANDBOX
+      ? "https://api.sandbox.ebay.com"
+      : "https://api.ebay.com";
+
+    const appId = Deno.env.get("EBAY_APP_ID")?.trim();
+    const certId = Deno.env.get("EBAY_CERT_ID")?.trim();
+
+    if (!appId || !certId) {
+      console.warn("eBay credentials not configured");
+      return { min: null, max: null, avg: null };
+    }
+
+    const credentials = btoa(`${appId}:${certId}`);
+    const tokenRes = await fetch(`${BASE}/identity/v1/oauth2/token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: `Basic ${credentials}`,
+      },
+      body: new URLSearchParams({
+        grant_type: "client_credentials",
+        scope: "https://api.ebay.com/oauth/api_scope",
+      }).toString(),
+    });
+
+    if (!tokenRes.ok) {
+      console.warn("eBay token failed");
+      return { min: null, max: null, avg: null };
+    }
+
+    const tokenData = await tokenRes.json();
+    const token = tokenData.access_token;
+
+    const queryParts = [coinName];
+    if (country) queryParts.push(country);
+    if (year) queryParts.push(String(year));
+    queryParts.push("coin");
+    const query = queryParts.join(" ");
+
+    const url = new URL(`${BASE}/buy/browse/v1/item_summary/search`);
+    url.searchParams.set("q", query);
+    url.searchParams.set("limit", "30");
+
+    const searchRes = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "X-EBAY-C-MARKETPLACE-ID": "EBAY_US",
+      },
+    });
+
+    if (!searchRes.ok) {
+      console.warn("eBay search failed");
+      return { min: null, max: null, avg: null };
+    }
+
+    const searchData = await searchRes.json();
+    const items = searchData.itemSummaries ?? [];
+    const prices: number[] = [];
+
+    for (const it of items) {
+      const p = it.price?.value;
+      if (p) {
+        const num = parseFloat(p);
+        if (!Number.isNaN(num) && num > 0) prices.push(num);
+      }
+    }
+
+    if (prices.length === 0) {
+      return { min: null, max: null, avg: null };
+    }
+
+    // Sort prices
+    prices.sort((a, b) => a - b);
+    
+    // Calculate median
+    const medianIndex = Math.floor(prices.length / 2);
+    const median = prices.length % 2 === 0
+      ? (prices[medianIndex - 1] + prices[medianIndex]) / 2
+      : prices[medianIndex];
+    
+    // Grade-based price adjustment (1-70 scale)
+    // Higher grade = higher percentile of prices
+    const grade = gradeValue ?? 30; // default to VF if no grade
+    
+    // Determine which part of price distribution to use based on grade
+    // Low grade (1-15): use lower 10-25% of prices
+    // Medium-low (16-35): use 25-50% of prices
+    // Medium-high (36-55): use 50-75% of prices  
+    // High grade (56-70): use upper 75-95% of prices
+    let targetPercentile: number;
+    if (grade <= 15) {
+      targetPercentile = 0.10 + (grade / 15) * 0.15; // 0.10 to 0.25
+    } else if (grade <= 35) {
+      targetPercentile = 0.25 + ((grade - 15) / 20) * 0.25; // 0.25 to 0.50
+    } else if (grade <= 55) {
+      targetPercentile = 0.50 + ((grade - 35) / 20) * 0.25; // 0.50 to 0.75
+    } else {
+      targetPercentile = 0.75 + ((grade - 55) / 15) * 0.20; // 0.75 to 0.95
+    }
+    
+    const targetIndex = Math.floor(prices.length * targetPercentile);
+    const targetPrice = prices[Math.min(targetIndex, prices.length - 1)];
+    
+    // Calculate spread - narrower for high grades, wider for low grades
+    // High grade coins have more consistent pricing
+    const gradePercent = Math.min(grade / 70, 1);
+    const spreadPercent = 0.10 + (1 - gradePercent) * 0.15; // 10-25% spread
+    const maxSpread = 25; // Maximum $25 difference
+    const spread = Math.min(targetPrice * spreadPercent, maxSpread);
+    
+    // Minimum spread of $2 for very cheap coins
+    const actualSpread = Math.max(spread, 2);
+    
+    const min = Math.max(0.5, targetPrice - actualSpread / 2);
+    const max = targetPrice + actualSpread / 2;
+
+    return { 
+      min: Math.round(min * 100) / 100, 
+      max: Math.round(max * 100) / 100, 
+      avg: Math.round(targetPrice * 100) / 100 
+    };
+  } catch (e) {
+    console.error("eBay price fetch error:", e);
+    return { min: null, max: null, avg: null };
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS_HEADERS });
@@ -63,11 +198,10 @@ Deno.serve(async (req: Request) => {
   try {
     const { front_image_url, back_image_url, user_id } = await req.json();
 
-    if (!front_image_url || !back_image_url || !user_id) {
+    if (!front_image_url || !back_image_url) {
       return new Response(
         JSON.stringify({
-          error:
-            "front_image_url, back_image_url, and user_id are required",
+          error: "front_image_url and back_image_url are required",
         }),
         { status: 400, headers: CORS_HEADERS }
       );
@@ -184,6 +318,20 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Fetch eBay prices (adjusted by coin grade)
+    const ebayPrices = await fetchEbayPrices(
+      String(coinData.name ?? ""),
+      coinData.country as string | null,
+      coinData.year_start as number | null,
+      coinData.grade_value as number | null
+    );
+
+    // Use eBay prices if available, otherwise use Gemini estimates
+    const finalPriceMin =
+      ebayPrices.min ?? (coinData.estimated_price_min as number | null);
+    const finalPriceMax =
+      ebayPrices.max ?? (coinData.estimated_price_max as number | null);
+
     const { data: insertedCoin, error: insertError } = await supabase
       .from("coins")
       .insert({
@@ -195,8 +343,8 @@ Deno.serve(async (req: Request) => {
         back_image_url,
         mintage: coinData.mintage ?? null,
         composition: coinData.composition ?? null,
-        estimated_price_min: coinData.estimated_price_min ?? null,
-        estimated_price_max: coinData.estimated_price_max ?? null,
+        estimated_price_min: finalPriceMin,
+        estimated_price_max: finalPriceMax,
         grade_label: coinData.grade_label ?? null,
         grade_value: coinData.grade_value ?? null,
         denomination: coinData.denomination ?? null,
@@ -209,7 +357,7 @@ Deno.serve(async (req: Request) => {
         designer: coinData.designer ?? null,
         history_description: coinData.history_description ?? null,
         ai_opinion: coinData.ai_opinion ?? null,
-        scanned_by_user_id: user_id,
+        scanned_by_user_id: user_id || null,
         scanned_at: new Date().toISOString(),
       })
       .select()

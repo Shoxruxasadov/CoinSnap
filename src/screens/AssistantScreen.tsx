@@ -12,7 +12,6 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ChevronLeft, X, Send, ImageIcon } from 'lucide-react-native';
@@ -75,14 +74,14 @@ export default function AssistantScreen() {
   const styles = useMemo(
     () =>
       StyleSheet.create({
-        container: { flex: 1, backgroundColor: colors.background.bgWhite },
+        container: { flex: 1, backgroundColor: colors.surface.onBgBase },
         header: {
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
           paddingHorizontal: 16,
           paddingVertical: 12,
-          backgroundColor: colors.background.bgWhite,
+          backgroundColor: colors.surface.onBgBase,
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: colors.border.border3,
         },
@@ -90,7 +89,7 @@ export default function AssistantScreen() {
         headerTitle: { fontWeight: '700', fontSize: 18, color: colors.text.textBase },
         headerRight: { width: 32 },
         keyboardView: { flex: 1 },
-        chatArea: { flex: 1, paddingHorizontal: 16, backgroundColor: colors.background.bgBase },
+        chatArea: { flex: 1, paddingHorizontal: 16, backgroundColor: colors.background.bgBaseElevated },
         list: { flex: 1 },
         messageRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 16 },
         loadingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
@@ -98,7 +97,7 @@ export default function AssistantScreen() {
         avatarImage: { width: 40, height: 40 },
         bubbleWrapLeft: { flex: 1, alignItems: 'flex-start' },
         bubbleLeft: {
-          backgroundColor: colors.background.bgWhite,
+          backgroundColor: colors.surface.onBgBase,
           borderRadius: 16,
           borderBottomLeftRadius: 4,
           paddingVertical: 10,
@@ -166,7 +165,7 @@ export default function AssistantScreen() {
           alignItems: 'flex-end',
           paddingHorizontal: 12,
           paddingTop: 12,
-          backgroundColor: colors.background.bgWhite,
+          backgroundColor: colors.surface.onBgBase,
           borderTopWidth: StyleSheet.hairlineWidth,
           borderTopColor: colors.border.border3,
         },
@@ -175,7 +174,7 @@ export default function AssistantScreen() {
           height: 44,
           justifyContent: 'center',
           alignItems: 'center',
-          backgroundColor: colors.border.border1,
+          backgroundColor: colors.border.border2,
           borderRadius: 22,
           padding: 8,
           marginRight: 8,
@@ -184,14 +183,14 @@ export default function AssistantScreen() {
           flex: 1,
           height: 44,
           borderRadius: 22,
-          backgroundColor: colors.border.border1,
+          backgroundColor: colors.border.border2,
           flexDirection: 'row',
         },
         input: {
           flex: 1,
           fontSize: 16,
           color: colors.text.textBase,
-          backgroundColor: colors.border.border1,
+          backgroundColor: colors.border.border2,
           borderRadius: 22,
           paddingVertical: 12,
           paddingLeft: 16,
@@ -209,7 +208,7 @@ export default function AssistantScreen() {
           alignItems: 'flex-end',
           paddingHorizontal: 12,
           paddingTop: 12,
-          backgroundColor: colors.background.bgWhite,
+          backgroundColor: colors.surface.onBgBase,
           borderTopWidth: StyleSheet.hairlineWidth,
           borderTopColor: colors.border.border3,
         },
@@ -220,7 +219,7 @@ export default function AssistantScreen() {
           marginRight: 8,
           overflow: 'hidden',
         },
-        pendingThumb: { width: 44, height: 44, backgroundColor: colors.background.bgBase },
+        pendingThumb: { width: 44, height: 44, backgroundColor: colors.surface.onBgBase },
         removeImage: {
           position: 'absolute',
           top: 3,
@@ -236,7 +235,7 @@ export default function AssistantScreen() {
           flex: 1,
           fontSize: 16,
           color: colors.text.textBase,
-          backgroundColor: colors.background.bgBase,
+          backgroundColor: colors.border.border2,
           borderRadius: 22,
           paddingVertical: 12,
           paddingLeft: 16,
@@ -462,7 +461,6 @@ export default function AssistantScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar style="dark" />
       <View style={styles.header}>
         <Pressable style={styles.backBtn} onPress={handleBack}>
           <ChevronLeft size={28} color={colors.text.textBase} />

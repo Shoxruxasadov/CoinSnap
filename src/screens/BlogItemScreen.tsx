@@ -12,13 +12,12 @@ import {
   PanResponder,
   Platform,
   StatusBar as RNStatusBar,
-  useColorScheme,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { X } from 'lucide-react-native';
-import { useThemeColors } from '../theme/useThemeColors';
+import { useThemeColors, useEffectiveColorScheme } from '../theme/useThemeColors';
 import type { BlogPost } from '../types/blog';
 import type { MainStackParamList } from '../navigation/MainStack';
 
@@ -192,7 +191,7 @@ export default function BlogItemScreen() {
 
   const handleClose = useCallback(() => navigation.goBack(), [navigation]);
 
-  const colorScheme = useColorScheme();
+  const colorScheme = useEffectiveColorScheme();
   const statusBarStyle = colorScheme === 'dark' ? 'light' : 'dark';
 
   useEffect(() => {
@@ -253,7 +252,7 @@ export default function BlogItemScreen() {
       <Animated.View
         style={[
           styles.contentSheet,
-          { transform: [{ translateY: sheetY }], backgroundColor: colors.background.bgBase },
+          { transform: [{ translateY: sheetY }], backgroundColor: colors.surface.onBgBase },
         ]}
       >
         <Animated.View style={{ flex: 1, paddingTop: sheetPaddingTop }}>
@@ -270,7 +269,7 @@ export default function BlogItemScreen() {
                   styles.headerHandle,
                   {
                     height: handleAnimHeight,
-                    backgroundColor: colors.border.border2,
+                    backgroundColor: colors.border.border1,
                     marginBottom: handleMarginBottom,
                   },
                 ]}
@@ -283,7 +282,7 @@ export default function BlogItemScreen() {
                 <Animated.View style={{ opacity: closeBtnStickyOpacity }}>
                   <TouchableOpacity
                     onPress={handleClose}
-                    style={[styles.headerCloseBtn, { backgroundColor: colors.surface.onBgBase }]}
+                    style={[styles.headerCloseBtn, { backgroundColor: colors.border.border3 }]}
                   >
                     <X size={20} color={colors.text.textBase} strokeWidth={2.5} />
                   </TouchableOpacity>
@@ -307,7 +306,7 @@ export default function BlogItemScreen() {
               scrollEventThrottle={16}
               bounces={!(isExpanded && scrollY < 100)}
             >
-              <View style={[styles.contentArea, { backgroundColor: colors.background.bgBase }]}>
+              <View style={[styles.contentArea, { backgroundColor: colors.surface.onBgBase }]}>
                 <Text style={[styles.cardTitle, { color: colors.text.textBase }]}>
                   {post.title}
                 </Text>

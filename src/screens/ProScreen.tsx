@@ -8,6 +8,7 @@ import {
   Linking,
   Dimensions,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -54,6 +55,7 @@ export default function ProScreen() {
 
   return (
     <View style={styles.container}>
+      <StatusBar style="light" />
       <Image
         source={require('../../assets/home/pro.png')}
         style={styles.backgroundImage}

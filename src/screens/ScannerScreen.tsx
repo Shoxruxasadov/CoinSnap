@@ -11,27 +11,57 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  PanResponder,
+  GestureResponderEvent,
+  LayoutChangeEvent,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
-import { X, Zap, ZapOff, ImagePlus, Info, Crown } from 'lucide-react-native';
+import { X, Zap, ImagePlus, Info, Crown } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../navigation/MainStack';
 import { supabase } from '../lib/supabase';
 import { useSupabaseSession } from '../lib/useSupabaseSession';
+import PagerView from 'react-native-pager-view';
 import { triggerSelection, triggerImpact } from '../lib/haptics';
 import { analyzeCoinInApp } from '../lib/analyzeCoin';
 import { processCoinImage } from '../lib/processCoinImage';
 
 type Nav = NativeStackNavigationProp<MainStackParamList>;
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const GUIDE_PAGES = [
+  {
+    title: 'Keep It Clear',
+    description: 'Make sure the coin is in focus and all details are easy to see',
+    imageWrong: require('../../assets/guide/1.png'),
+    imageRight: require('../../assets/guide/2.png'),
+  },
+  {
+    title: 'Center the Coin',
+    description: 'Place the coin fully inside the frame for best alignment',
+    imageWrong: require('../../assets/guide/1-1.png'),
+    imageRight: require('../../assets/guide/2.png'),
+  },
+  {
+    title: 'Use Good Lighting',
+    description: 'Take the photo in bright, even light without shadows or glare',
+    imageWrong: require('../../assets/guide/1-2.png'),
+    imageRight: require('../../assets/guide/2.png'),
+  },
+];
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CIRCLE_SIZE = SCREEN_WIDTH * 0.65;
+const CIRCLE_RATIO = 0.65;
+const OVERLAY_BORDER = SCREEN_HEIGHT;
+const CIRCLE_TOP = (SCREEN_HEIGHT - CIRCLE_SIZE) / 2.2;
+const CIRCLE_CENTER_Y = CIRCLE_TOP + CIRCLE_SIZE / 2;
 
 
 const ANALYSIS_STEPS = [
@@ -58,9 +88,48 @@ export default function ScannerScreen() {
   const [processing, setProcessing] = useState(false);
   const [analysisStepIndex, setAnalysisStepIndex] = useState(0);
   const [showSnapGuide, setShowSnapGuide] = useState(false);
-  const [zoom, setZoom] = useState(0);
+  const [guidePageIndex, setGuidePageIndex] = useState(0);
+  const guidePagerRef = useRef<PagerView>(null);
+
+  useEffect(() => {
+    if (showSnapGuide) {
+      setGuidePageIndex(0);
+      guidePagerRef.current?.setPage(0);
+    }
+  }, [showSnapGuide]);
+  const [zoom, setZoom] = useState(0.5 / 14.5);
+  const zoomTrackWidth = useRef(0);
+  const zoomTrackX = useRef(0);
+
+  const zoomPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt: GestureResponderEvent) => {
+        const x = evt.nativeEvent.pageX - zoomTrackX.current;
+        const clamped = Math.max(0, Math.min(1, x / zoomTrackWidth.current));
+        setZoom(clamped);
+      },
+      onPanResponderMove: (evt: GestureResponderEvent) => {
+        const x = evt.nativeEvent.pageX - zoomTrackX.current;
+        const clamped = Math.max(0, Math.min(1, x / zoomTrackWidth.current));
+        setZoom(clamped);
+      },
+    }),
+  ).current;
+
+  const onZoomTrackLayout = (e: LayoutChangeEvent) => {
+    zoomTrackWidth.current = e.nativeEvent.layout.width;
+    e.target.measureInWindow((x: number) => {
+      zoomTrackX.current = x;
+    });
+  };
+
+  const displayZoom = (0.5 + zoom * 14.5).toFixed(1);
 
   const progressAnim = useRef(new Animated.Value(0)).current;
+  const percentAnim = useRef(new Animated.Value(1)).current;
+  const prevStepRef = useRef(-1);
 
   useEffect(() => {
     if (!permission?.granted) {
@@ -69,7 +138,10 @@ export default function ScannerScreen() {
   }, [permission]);
 
   useEffect(() => {
-    if (!processing) return;
+    if (!processing) {
+      prevStepRef.current = -1;
+      return;
+    }
     let idx = 0;
     setAnalysisStepIndex(0);
     progressAnim.setValue(0);
@@ -91,43 +163,84 @@ export default function ScannerScreen() {
     animate();
   }, [processing]);
 
+  useEffect(() => {
+    if (!processing) return;
+    if (prevStepRef.current === analysisStepIndex) return;
+    prevStepRef.current = analysisStepIndex;
+    percentAnim.setValue(0);
+    Animated.spring(percentAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 100,
+      friction: 12,
+    }).start();
+  }, [analysisStepIndex, processing]);
+
   const handleClose = () => {
     triggerSelection();
     navigation.goBack();
   };
 
-  const processImage = async (uri: string): Promise<string> => {
-    const { width, height } = await new Promise<{ width: number; height: number }>(
+  const processImage = async (uri: string, fromCamera: boolean = false): Promise<string> => {
+    const { width: imgW, height: imgH } = await new Promise<{ width: number; height: number }>(
       (resolve, reject) => {
-        Image.getSize(
-          uri,
-          (w, h) => resolve({ width: w, height: h }),
-          reject,
-        );
+        Image.getSize(uri, (w, h) => resolve({ width: w, height: h }), reject);
       },
     );
 
-    const minDim = Math.min(width, height);
-    const cropSize = minDim;
-    const originX = Math.floor((width - cropSize) / 2);
-    const originY = Math.floor((height - cropSize) / 2);
+    const actions: ImageManipulator.Action[] = [];
 
-    const cropped = await ImageManipulator.manipulateAsync(
-      uri,
-      [
-        { crop: { originX, originY, width: cropSize, height: cropSize } },
-        { resize: { width: 800, height: 800 } },
-      ],
-      { compress: 0.92, format: ImageManipulator.SaveFormat.JPEG },
-    );
+    if (fromCamera) {
+      // Camera uses aspect-fill: map screen circle to photo coordinates
+      const circleScreenCX = SCREEN_WIDTH / 2;
+      const circleScreenCY = CIRCLE_CENTER_Y;
+      const circleScreenR = CIRCLE_SIZE / 2;
 
-    return cropped.uri;
+      const photoAspect = imgW / imgH;
+      const screenAspect = SCREEN_WIDTH / SCREEN_HEIGHT;
+      const scale = photoAspect > screenAspect
+        ? imgH / SCREEN_HEIGHT
+        : imgW / SCREEN_WIDTH;
+      const offX = photoAspect > screenAspect
+        ? (imgW - SCREEN_WIDTH * scale) / 2
+        : 0;
+      const offY = photoAspect > screenAspect
+        ? 0
+        : (imgH - SCREEN_HEIGHT * scale) / 2;
+
+      const cx = offX + circleScreenCX * scale;
+      const cy = offY + circleScreenCY * scale;
+      const r = circleScreenR * scale;
+
+      const originX = Math.max(0, Math.round(cx - r));
+      const originY = Math.max(0, Math.round(cy - r));
+      const width = Math.min(Math.round(r * 2), imgW - originX);
+      const height = Math.min(Math.round(r * 2), imgH - originY);
+
+      actions.push({ crop: { originX, originY, width, height } });
+      actions.push({ resize: { width: 1000 } });
+    } else {
+      const maxSize = 1200;
+      if (imgW > maxSize || imgH > maxSize) {
+        const s = Math.min(maxSize / imgW, maxSize / imgH);
+        actions.push({ resize: { width: Math.round(imgW * s), height: Math.round(imgH * s) } });
+      }
+    }
+
+    if (actions.length === 0) return uri;
+
+    const result = await ImageManipulator.manipulateAsync(uri, actions, {
+      compress: 0.92,
+      format: ImageManipulator.SaveFormat.JPEG,
+    });
+    return result.uri;
   };
 
   const uploadImage = async (uri: string, side: string): Promise<string | null> => {
     try {
       const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
-      const filename = `${userId}/${Date.now()}_${side}.jpg`;
+      const folder = userId || 'anonymous';
+      const filename = `${folder}/${Date.now()}_${side}.jpg`;
       const contentType = 'image/jpeg';
 
       const { data, error } = await supabase.storage
@@ -162,7 +275,7 @@ export default function ScannerScreen() {
 
       if (!photo?.uri) return;
 
-      const processed = await processImage(photo.uri);
+      const processed = await processImage(photo.uri, true);
 
       if (step === 1) {
         setFrontImage(processed);
@@ -251,11 +364,6 @@ export default function ScannerScreen() {
   };
 
   const startProcessing = async (front: string, back: string) => {
-    if (!userId) {
-      Alert.alert('Error', 'Please sign in to scan coins');
-      return;
-    }
-
     setProcessing(true);
 
     try {
@@ -298,6 +406,7 @@ export default function ScannerScreen() {
   if (!permission?.granted) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
+        <StatusBar style="light" />
         <View style={styles.permissionContainer}>
           <Text style={styles.permissionText}>Camera permission is required to scan coins</Text>
           <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission}>
@@ -313,6 +422,7 @@ export default function ScannerScreen() {
 
   return (
     <View style={styles.container}>
+      <StatusBar style="light" />
       {/* Camera */}
       <CameraView
         ref={cameraRef}
@@ -324,31 +434,13 @@ export default function ScannerScreen() {
 
       {/* Dark overlay with circle cutout */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        <View style={styles.overlayTop} />
-        <View style={styles.overlayMiddle}>
-          {/* Left side with curved corners */}
-          <View style={styles.overlaySideContainer}>
-            <View style={styles.overlaySideFill} />
-            <View style={[styles.curveCorner, styles.curveTopRight]} />
-            <View style={[styles.curveCorner, styles.curveBottomRight]} />
-          </View>
-          {/* Circle cutout */}
-          <View style={styles.circleHole}>
-            <View
-              style={[
-                styles.dashedCircle,
-                { borderColor: step === 1 ? '#4CAF50' : '#FFFFFF' },
-              ]}
-            />
-          </View>
-          {/* Right side with curved corners */}
-          <View style={styles.overlaySideContainer}>
-            <View style={styles.overlaySideFill} />
-            <View style={[styles.curveCorner, styles.curveTopLeft]} />
-            <View style={[styles.curveCorner, styles.curveBottomLeft]} />
-          </View>
-        </View>
-        <View style={styles.overlayBottom} />
+        <View style={styles.overlayMask} />
+        <View
+          style={[
+            styles.dashedCircle,
+            { borderColor: step === 1 ? '#4CAF50' : '#FFFFFF' },
+          ]}
+        />
       </View>
 
       {/* Header */}
@@ -420,15 +512,16 @@ export default function ScannerScreen() {
       <View style={[styles.bottomControls, { paddingBottom: insets.bottom + 16 }]}>
         {/* Zoom */}
         <View style={styles.zoomRow}>
-          <Text style={styles.zoomLabel}>0.5</Text>
-          <View style={styles.zoomTrack}>
+          <Text style={styles.zoomLabel}>{displayZoom}x</Text>
+          <View
+            style={styles.zoomTrack}
+            onLayout={onZoomTrackLayout}
+            {...zoomPanResponder.panHandlers}
+          >
             <View style={[styles.zoomFill, { width: `${zoom * 100}%` }]} />
-            <View
-              style={[styles.zoomThumb, { left: `${zoom * 100}%` }]}
-              {...(Platform.OS === 'ios' ? {} : {})}
-            />
+            <View style={[styles.zoomThumb, { left: `${zoom * 100}%` }]} />
           </View>
-          <Text style={styles.zoomLabel}>5x</Text>
+          <Text style={styles.zoomLabel}>15x</Text>
         </View>
 
         {/* Shutter row */}
@@ -474,7 +567,24 @@ export default function ScannerScreen() {
               )}
             </View>
 
-            <Text style={styles.processingPercent}>{currentAnalysis.percent}%</Text>
+            <View style={styles.percentContainer}>
+              <Animated.Text
+                style={[
+                  styles.processingPercent,
+                  {
+                    opacity: percentAnim,
+                    transform: [{
+                      translateY: percentAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [24, 0],
+                      }),
+                    }],
+                  },
+                ]}
+              >
+                {currentAnalysis.percent}%
+              </Animated.Text>
+            </View>
 
             <View style={styles.progressBarBg}>
               <Animated.View style={[styles.progressBarFill, { width: progressWidth }]} />
@@ -493,23 +603,36 @@ export default function ScannerScreen() {
       <Modal visible={showSnapGuide} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.snapGuideCard}>
-            <Text style={styles.snapGuideTitle}>Snap Guide</Text>
-            <Text style={styles.snapGuideDesc}>
-              Place the coin in the center and take a clear, well-lit photo
-            </Text>
-            <View style={styles.snapGuideExamples}>
-              <View style={styles.snapGuideExample}>
-                <Image
-                  source={require('../../assets/home/info1.png')}
-                  style={styles.snapGuideImg}
+            <PagerView
+              ref={guidePagerRef}
+              style={styles.snapGuidePager}
+              initialPage={0}
+              onPageSelected={(e) => setGuidePageIndex(e.nativeEvent.position)}
+            >
+              {GUIDE_PAGES.map((page, index) => (
+                <View key={index} style={styles.snapGuidePage} collapsable={false}>
+                  <Text style={styles.snapGuideTitle}>{page.title}</Text>
+                  <Text style={styles.snapGuideDesc}>{page.description}</Text>
+                  <View style={styles.snapGuideExamples}>
+                    <View style={styles.snapGuideExample}>
+                      <Image source={page.imageWrong} style={styles.snapGuideImg} resizeMode="cover" />
+                  
+                    </View>
+                    <View style={styles.snapGuideExample}>
+                      <Image source={page.imageRight} style={styles.snapGuideImg} resizeMode="cover" />
+                 
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </PagerView>
+            <View style={styles.snapGuideDots}>
+              {GUIDE_PAGES.map((_, i) => (
+                <View
+                  key={i}
+                  style={[styles.snapGuideDot, guidePageIndex === i && styles.snapGuideDotActive]}
                 />
-              </View>
-              <View style={styles.snapGuideExample}>
-                <Image
-                  source={require('../../assets/home/coin2.png')}
-                  style={styles.snapGuideImg}
-                />
-              </View>
+              ))}
             </View>
             <TouchableOpacity
               style={styles.snapGuideBtn}
@@ -620,73 +743,25 @@ const styles = StyleSheet.create({
   },
 
   // Overlay
-  overlayTop: {
-    flex: 1,
-    backgroundColor: OVERLAY_COLOR,
-  },
-  overlayMiddle: {
-    flexDirection: 'row',
-    height: CIRCLE_SIZE,
-  },
-  overlaySideContainer: {
-    flex: 1,
-    position: 'relative',
-  },
-  overlaySideFill: {
+  overlayMask: {
     position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: CIRCLE_SIZE / 2,
-    backgroundColor: OVERLAY_COLOR,
-  },
-  curveCorner: {
-    position: 'absolute',
-    width: CIRCLE_SIZE / 2,
-    height: CIRCLE_SIZE / 2,
-  },
-  curveTopRight: {
-    top: 0,
-    right: 0,
-    backgroundColor: OVERLAY_COLOR,
-    borderBottomLeftRadius: CIRCLE_SIZE / 2,
-  },
-  curveBottomRight: {
-    bottom: 0,
-    right: 0,
-    backgroundColor: OVERLAY_COLOR,
-    borderTopLeftRadius: CIRCLE_SIZE / 2,
-  },
-  curveTopLeft: {
-    top: 0,
-    left: 0,
-    backgroundColor: OVERLAY_COLOR,
-    borderBottomRightRadius: CIRCLE_SIZE / 2,
-  },
-  curveBottomLeft: {
-    bottom: 0,
-    left: 0,
-    backgroundColor: OVERLAY_COLOR,
-    borderTopRightRadius: CIRCLE_SIZE / 2,
-  },
-  circleHole: {
     width: CIRCLE_SIZE,
     height: CIRCLE_SIZE,
-    borderRadius: CIRCLE_SIZE / 2,
-    overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
+    top: CIRCLE_CENTER_Y - CIRCLE_SIZE / 2,
+    left: (SCREEN_WIDTH - CIRCLE_SIZE) / 2,
+    borderRadius: CIRCLE_SIZE / 2 + OVERLAY_BORDER,
+    borderWidth: OVERLAY_BORDER,
+    borderColor: OVERLAY_COLOR,
   },
   dashedCircle: {
+    position: 'absolute',
     width: CIRCLE_SIZE - 8,
     height: CIRCLE_SIZE - 8,
+    top: CIRCLE_CENTER_Y - CIRCLE_SIZE / 2 + 4,
+    left: (SCREEN_WIDTH - CIRCLE_SIZE) / 2 + 4,
     borderRadius: (CIRCLE_SIZE - 8) / 2,
     borderWidth: 3,
     borderStyle: 'dashed',
-  },
-  overlayBottom: {
-    flex: 1.2,
-    backgroundColor: OVERLAY_COLOR,
   },
 
   // Thumbnails
@@ -762,7 +837,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 13,
     fontWeight: '600',
-    width: 28,
+    minWidth: 36,
     textAlign: 'center',
   },
   zoomTrack: {
@@ -861,11 +936,18 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 60,
   },
+  percentContainer: {
+    height: 58,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   processingPercent: {
     color: '#fff',
     fontSize: 48,
     fontWeight: '800',
-    marginBottom: 16,
+    ...(Platform.OS === 'ios' ? { fontFamily: '.SFCompactRounded-Heavy' } : {}),
   },
   progressBarBg: {
     width: '100%',
@@ -891,11 +973,13 @@ const styles = StyleSheet.create({
     color: '#DFAC4C',
     fontSize: 15,
     fontWeight: '600',
+    ...(Platform.OS === 'ios' ? { fontFamily: '.SFCompactRounded-Semibold' } : {}),
   },
   processingTime: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+    ...(Platform.OS === 'ios' ? { fontFamily: '.SFCompactRounded-Bold' } : {}),
   },
 
   // Snap Guide modal
@@ -910,14 +994,24 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
     paddingTop: 32,
     paddingBottom: 48,
-    paddingHorizontal: 28,
     alignItems: 'center',
+    maxHeight: '90%',
+  },
+  snapGuidePager: {
+    width: '100%',
+    height: 280,
+  },
+  snapGuidePage: {
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
   },
   snapGuideTitle: {
     color: '#fff',
     fontSize: 28,
     fontWeight: '800',
     marginBottom: 12,
+    paddingHorizontal: 28,
   },
   snapGuideDesc: {
     color: 'rgba(255,255,255,0.8)',
@@ -925,11 +1019,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
     marginBottom: 28,
+    paddingHorizontal: 28,
   },
   snapGuideExamples: {
     flexDirection: 'row',
     gap: 32,
     marginBottom: 32,
+    paddingHorizontal: 28,
   },
   snapGuideExample: {
     position: 'relative',
@@ -938,7 +1034,8 @@ const styles = StyleSheet.create({
   snapGuideImg: {
     width: 120,
     height: 120,
-    borderRadius: 60,
+  },
+  snapGuideImgPlaceholder: {
     backgroundColor: '#333',
   },
   snapGuideBadge: {
@@ -951,12 +1048,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  snapGuideDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+    marginBottom: 24,
+  },
+  snapGuideDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  snapGuideDotActive: {
+    backgroundColor: '#fff',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
   snapGuideBtn: {
     backgroundColor: '#fff',
     borderRadius: 16,
     paddingVertical: 16,
     paddingHorizontal: 48,
-    width: '100%',
+    width: '90%',
     alignItems: 'center',
   },
   snapGuideBtnText: {

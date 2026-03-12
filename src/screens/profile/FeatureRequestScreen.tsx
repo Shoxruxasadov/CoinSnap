@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -6,9 +6,10 @@ import {
   View,
   ScrollView,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { ChevronLeft, ChevronUp, Plus } from 'lucide-react-native';
@@ -43,14 +44,16 @@ export default function FeatureRequestScreen() {
 
   const [requests, setRequests] = useState<FeatureRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [votedIds, setVotedIds] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    fetchRequests();
-  }, []);
+  const fetchRequests = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
 
-  const fetchRequests = async () => {
-    setLoading(true);
     const { data } = await supabase
       .from('feature_requests')
       .select('*')
@@ -58,7 +61,18 @@ export default function FeatureRequestScreen() {
 
     setRequests((data as FeatureRequest[]) ?? []);
     setLoading(false);
-  };
+    setRefreshing(false);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchRequests();
+    }, [fetchRequests])
+  );
+
+  const onRefresh = useCallback(() => {
+    fetchRequests(true);
+  }, [fetchRequests]);
 
   const handleBack = () => {
     triggerSelection();
@@ -101,11 +115,18 @@ export default function FeatureRequestScreen() {
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.text.textTertiary}
+            />
+          }
         >
           {requests.map((req) => (
             <View
               key={req.id}
-              style={[styles.requestCard, { backgroundColor: colors.background.bgWhite, borderColor: colors.border.border3 }]}
+              style={[styles.requestCard, { backgroundColor: colors.surface.onBgBase, borderColor: colors.border.border3 }]}
             >
               <View style={styles.requestContent}>
                 <Text style={[styles.requestTitle, { color: colors.text.textBase }]}>{req.title}</Text>

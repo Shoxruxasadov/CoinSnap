@@ -18,7 +18,7 @@ import {
 import { BottomSheetModal, BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import { Heart, MessageCircle, ChevronLeft, Send, MoreVertical, Pencil, Trash2 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../navigation/MainStack';
 import { supabase } from '../lib/supabase';
@@ -29,10 +29,10 @@ import {
   getDisplayName,
   getAvatarUrl,
   formatPostDate,
+  formatPostTime,
 } from '../types/community';
 import { triggerSelection, triggerImpact } from '../lib/haptics';
 import { useThemeColors } from '../theme/useThemeColors';
-import type { ColorTokens } from '../theme/colors';
 import { ImageViewer } from '../components/ImageViewer';
 
 type StackNav = NativeStackNavigationProp<MainStackParamList>;
@@ -49,14 +49,14 @@ function ReplyCard({
   postAuthorName: string;
   onLike: (replyId: number, isLiked: boolean) => void;
   currentUserId?: string;
-  colors: ColorTokens;
+  colors: ReturnType<typeof useThemeColors>;
 }) {
   const avatarUrl = getAvatarUrl(reply.user);
   const name = getDisplayName(reply.user);
   const isLiked = reply.is_liked ?? false;
 
   return (
-    <View style={[styles.replyCard, { backgroundColor: colors.background.bgAlt }]}>
+    <View style={[styles.replyCard, { backgroundColor: colors.surface.onBgBase }]}>
       <View style={styles.replyHeader}>
         {avatarUrl ? (
           <Image source={{ uri: avatarUrl }} style={styles.replyAvatar} />
@@ -72,7 +72,7 @@ function ReplyCard({
       </View>
       <Text style={[styles.replyText, { color: colors.text.textBase }]}>{reply.content}</Text>
       <View style={styles.replyFooter}>
-        <Text style={[styles.replyDate, { color: colors.text.textTertiary }]}>{formatPostDate(reply.created_at)}</Text>
+        <Text style={[styles.replyDate, { color: colors.text.textTertiary }]}>{formatPostDate(reply.created_at)} {formatPostTime(reply.created_at)}</Text>
         <TouchableOpacity
           style={styles.replyLikeBtn}
           onPress={() => {
@@ -246,7 +246,10 @@ export default function CommunityPostScreen() {
   };
 
   const handlePostLike = async () => {
-    if (!currentUserId) return;
+    if (!currentUserId) {
+      navigation.dispatch(CommonActions.navigate({ name: 'GetStarted' }));
+      return;
+    }
     triggerSelection();
 
     const isLiked = post.is_liked ?? false;
@@ -278,7 +281,10 @@ export default function CommunityPostScreen() {
   };
 
   const handleReplyLike = async (replyId: number, isLiked: boolean) => {
-    if (!currentUserId) return;
+    if (!currentUserId) {
+      navigation.dispatch(CommonActions.navigate({ name: 'GetStarted' }));
+      return;
+    }
 
     setReplies((prev) =>
       prev.map((r) =>
@@ -384,7 +390,7 @@ export default function CommunityPostScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: colors.background.bgBase }]}
+      style={[styles.container, { backgroundColor: colors.background.bgBaseElevated }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}
     >
@@ -425,7 +431,7 @@ export default function CommunityPostScreen() {
         }
       >
         {/* Main Post */}
-        <View style={[styles.postCard, { backgroundColor: colors.background.bgAlt }]}>
+        <View style={[styles.postCard, { backgroundColor: colors.surface.onBgBase }]}>
           <View style={styles.postHeader}>
             {avatarUrl ? (
               <Image source={{ uri: avatarUrl }} style={styles.avatar} />
@@ -434,7 +440,7 @@ export default function CommunityPostScreen() {
             )}
             <View style={styles.postMeta}>
               <Text style={[styles.postName, { color: colors.text.textBase }]}>{postAuthorName}</Text>
-              <Text style={[styles.postDate, { color: colors.text.textTertiary }]}>{formatPostDate(post.created_at)}</Text>
+              <Text style={[styles.postDate, { color: colors.text.textTertiary }]}>{formatPostDate(post.created_at)} {formatPostTime(post.created_at)}</Text>
             </View>
           </View>
           <Text style={[styles.postText, { color: colors.text.textBase }]}>{post.content}</Text>
@@ -495,41 +501,43 @@ export default function CommunityPostScreen() {
         )}
       </ScrollView>
 
-      {/* Reply Input */}
-      <View style={[styles.replyInputContainer, { paddingBottom: insets.bottom + 12, backgroundColor: colors.background.bgAlt, borderTopColor: colors.border.border2 }]}>
-        {currentUserAvatar ? (
-          <Image source={{ uri: currentUserAvatar }} style={styles.inputAvatar} />
-        ) : (
-          <View style={[styles.inputAvatar, styles.avatarPlaceholder, { backgroundColor: colors.border.border3 }]} />
-        )}
-        <View style={styles.inputWrapper}>
-          <View style={[styles.inputIndicator, { backgroundColor: colors.text.textBrand }]} />
-          <TextInput
-            style={[styles.replyInput, { color: colors.text.textBase }]}
-            placeholder="Write your reply!"
-            placeholderTextColor={colors.text.textTertiary}
-            value={replyText}
-            onChangeText={setReplyText}
-            multiline
-            maxLength={500}
-          />
-        </View>
-        <TouchableOpacity
-          style={[
-            styles.sendBtn,
-            { backgroundColor: colors.border.border3 },
-            replyText.trim() && { backgroundColor: colors.background.bgInverse },
-          ]}
-          onPress={handleSendReply}
-          disabled={!replyText.trim() || sending}
-        >
-          {sending ? (
-            <ActivityIndicator size="small" color={colors.text.textInverse} />
+      {/* Reply Input - only show when logged in */}
+      {currentUserId && (
+        <View style={[styles.replyInputContainer, { paddingBottom: insets.bottom + 12, backgroundColor: colors.background.bgAlt, borderTopColor: colors.border.border2 }]}>
+          {currentUserAvatar ? (
+            <Image source={{ uri: currentUserAvatar }} style={styles.inputAvatar} />
           ) : (
-            <Send size={20} color={replyText.trim() ? colors.text.textInverse : colors.text.textTertiary} />
+            <View style={[styles.inputAvatar, styles.avatarPlaceholder, { backgroundColor: colors.border.border3 }]} />
           )}
-        </TouchableOpacity>
-      </View>
+          <View style={styles.inputWrapper}>
+            <View style={[styles.inputIndicator, { backgroundColor: colors.text.textBrand }]} />
+            <TextInput
+              style={[styles.replyInput, { color: colors.text.textBase }]}
+              placeholder="Write your reply!"
+              placeholderTextColor={colors.text.textTertiary}
+              value={replyText}
+              onChangeText={setReplyText}
+              multiline
+              maxLength={500}
+            />
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.sendBtn,
+              { backgroundColor: colors.border.border3 },
+              replyText.trim() && { backgroundColor: colors.background.bgInverse },
+            ]}
+            onPress={handleSendReply}
+            disabled={!replyText.trim() || sending}
+          >
+            {sending ? (
+              <ActivityIndicator size="small" color={colors.text.textInverse} />
+            ) : (
+              <Send size={20} color={replyText.trim() ? colors.text.textInverse : colors.text.textTertiary} />
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
 
       <ImageViewer
         visible={imageViewerVisible}

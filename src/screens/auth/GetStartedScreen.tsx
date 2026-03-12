@@ -69,7 +69,7 @@ export default function GetStartedScreen({ navigation }: Props) {
         {
           paddingTop: insets.top,
           paddingBottom: insets.bottom,
-          backgroundColor: colors.background.bgWhite,
+          backgroundColor: colors.background.bgBaseElevated,
         },
       ]}
     >
@@ -129,18 +129,18 @@ export default function GetStartedScreen({ navigation }: Props) {
             activeOpacity={0.8}
           >
             {loading === "apple" ? (
-              <ActivityIndicator color={colors.text.textBase} />
+              <ActivityIndicator color={colors.text.textInverse} />
             ) : (
               <>
                 <Ionicons
                   name="logo-apple"
                   size={22}
-                  color={colors.text.textWhite}
+                  color={colors.text.textInverse}
                 />
                 <Text
                   style={[
                     styles.btnAppleLabel,
-                    { color: colors.text.textWhite },
+                    { color: colors.text.textInverse },
                   ]}
                 >
                   Continue with Apple

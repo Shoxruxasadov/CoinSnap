@@ -14,7 +14,7 @@ import {
 import { BottomSheetModal, BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import { Heart, MessageCircle, ArrowUpDown, Plus, X, Check, MoreVertical, Pencil, Trash2 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, CommonActions } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { supabase } from '../../lib/supabase';
@@ -25,10 +25,10 @@ import {
   getDisplayName,
   getAvatarUrl,
   formatPostDate,
+  formatPostTime,
 } from '../../types/community';
 import { triggerSelection } from '../../lib/haptics';
 import { useThemeColors } from '../../theme/useThemeColors';
-import type { ColorTokens } from '../../theme/colors';
 import { ImageViewer } from '../../components/ImageViewer';
 
 type StackNav = NativeStackNavigationProp<MainStackParamList>;
@@ -50,7 +50,7 @@ function PostCard({
   onImagePress?: (urls: string[], index: number) => void;
   isOwnPost: boolean;
   currentUserId?: string;
-  colors: ColorTokens;
+  colors: ReturnType<typeof useThemeColors>;
 }) {
   const avatarUrl = getAvatarUrl(post.user);
   const name = getDisplayName(post.user);
@@ -64,7 +64,7 @@ function PostCard({
   const urls = post.image_urls ?? [];
 
   return (
-    <View style={[styles.postCard, { backgroundColor: colors.background.bgAlt }]}>
+    <View style={[styles.postCard, { backgroundColor: colors.surface.onBgBase }]}>
       <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
         <View style={styles.postHeader}>
           {avatarUrl ? (
@@ -74,7 +74,7 @@ function PostCard({
           )}
           <View style={[styles.postMeta, { flex: 1 }]}>
             <Text style={[styles.postName, { color: colors.text.textBase }]}>{name}</Text>
-            <Text style={[styles.postDate, { color: colors.text.textTertiary }]}>{formatPostDate(post.created_at)}</Text>
+            <Text style={[styles.postDate, { color: colors.text.textTertiary }]}>{formatPostDate(post.created_at)} {formatPostTime(post.created_at)}</Text>
           </View>
           {isOwnPost && onMorePress && (
             <TouchableOpacity
@@ -95,7 +95,7 @@ function PostCard({
         </Text>
       </TouchableOpacity>
       {urls.length > 0 && (
-        <View style={styles.postImages}>
+        <TouchableOpacity style={styles.postImages} onPress={onPress} activeOpacity={1}>
           {urls.slice(0, 2).map((url, idx) => (
             <TouchableOpacity
               key={idx}
@@ -108,7 +108,7 @@ function PostCard({
               <Image source={{ uri: url }} style={[styles.postImage, { backgroundColor: colors.background.bgBaseElevated }]} />
             </TouchableOpacity>
           ))}
-        </View>
+        </TouchableOpacity>
       )}
       <TouchableOpacity style={styles.postActions} onPress={onPress} activeOpacity={0.7}>
         <TouchableOpacity style={styles.actionRow} onPress={handleLike}>
@@ -298,7 +298,10 @@ export default function CommunityScreen() {
   };
 
   const handleLike = async (postId: number, isLiked: boolean) => {
-    if (!currentUserId) return;
+    if (!currentUserId) {
+      navigation.dispatch(CommonActions.navigate({ name: 'GetStarted' }));
+      return;
+    }
 
     setPosts((prev) =>
       prev.map((p) =>
@@ -345,6 +348,10 @@ export default function CommunityScreen() {
 
   const handleNewPost = () => {
     triggerSelection();
+    if (!currentUserId) {
+      navigation.dispatch(CommonActions.navigate({ name: 'GetStarted' }));
+      return;
+    }
     stackNav?.navigate('CommunityNewPost', {});
   };
 
@@ -640,6 +647,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     marginTop: 12,
+    alignSelf: 'stretch',
   },
   postImage: {
     width: 72,

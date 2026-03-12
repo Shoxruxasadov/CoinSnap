@@ -63,9 +63,9 @@ export default function HomeScreen() {
           </View>
         </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity style={[styles.proBtn, { backgroundColor: "#FFB900" }]} onPress={() => stackNav?.navigate('Pro')}>
-            <Crown size={19} color="#2E1B03" fill="#2E1B03" />
-            <Text style={[styles.proText, { color: "#2E1B03" }]}>PRO</Text>
+          <TouchableOpacity style={[styles.proBtn, { backgroundColor: colors.background.brand }]} onPress={() => stackNav?.navigate('Pro')}>
+            <Crown size={19} color={colors.text.textDark} fill={colors.text.textDark} />
+            <Text style={[styles.proText, { color: colors.text.textDark }]}>PRO</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.iconBtn, { backgroundColor: colors.surface.onBgBase }]} onPress={openSnapHistory}>
             <Clock size={20} color={colors.text.textBase} />
@@ -148,14 +148,14 @@ export default function HomeScreen() {
                 </Pressable>
               ))
             )}
+            <TouchableOpacity
+              style={[styles.seeAllBtn, { backgroundColor: colors.surface.onBgBase }]}
+              onPress={openBlog}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.seeAllText, { color: colors.text.textBase }]}>See all</Text>
+            </TouchableOpacity>
           </ScrollView>
-          <TouchableOpacity
-            style={[styles.seeAllBtn, { borderColor: colors.border.border2 }]}
-            onPress={openBlog}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.seeAllText, { color: colors.text.textBase }]}>See all</Text>
-          </TouchableOpacity>
         </View>
       </ScrollView>
     </View>
@@ -306,8 +306,10 @@ const styles = StyleSheet.create({
     marginHorizontal: -20,
   },
   blogScrollContent: {
-    paddingHorizontal: 20,
+    paddingLeft: 20,
+    paddingRight: 20,
     paddingBottom: 12,
+    alignItems: 'stretch',
   },
   blogCard: {
     flexDirection: 'row',
@@ -343,11 +345,13 @@ const styles = StyleSheet.create({
     minWidth: 280,
   },
   seeAllBtn: {
-    alignSelf: 'center',
-    paddingVertical: 12,
+    marginLeft: 4,
+    minWidth: 100,
+    minHeight: 88,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: 24,
-    borderRadius: 10,
-    borderWidth: 1,
   },
   seeAllText: {
     fontSize: 15,

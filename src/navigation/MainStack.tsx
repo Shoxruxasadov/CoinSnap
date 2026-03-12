@@ -64,7 +64,7 @@ export default function MainStack() {
       <Stack.Screen name="CommunityNewPost" component={CommunityNewPostScreen} />
       <Stack.Screen name="CommunityReply" component={CommunityReplyScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
-      <Stack.Screen name="ScannerScreen" component={ScannerScreen} />
+      <Stack.Screen name="ScannerScreen" component={ScannerScreen} options={{ gestureEnabled: false }} />
       <Stack.Screen name="ScanResult" component={ScanResultScreen} />
       <Stack.Screen name="Pro" component={ProScreen} />
       <Stack.Screen name="Achievements" component={AchievementsScreen} />
