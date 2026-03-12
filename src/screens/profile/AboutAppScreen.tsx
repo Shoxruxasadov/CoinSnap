@@ -50,7 +50,7 @@ export default function AboutAppScreen() {
           />
         </View>
 
-        <Text style={[styles.appName, { color: colors.text.textBase }]}>Coin Snap</Text>
+        <Text style={[styles.appName, { color: colors.text.textBase }]}>Cointerest</Text>
         <Text style={[styles.version, { color: colors.text.textTertiary }]}>Version {appVersion}</Text>
 
         <Text style={[styles.sectionTitle, { color: colors.text.textBase }]}>About This App</Text>

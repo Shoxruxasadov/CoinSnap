@@ -111,7 +111,7 @@ export default function GetStartedScreen({ navigation }: Props) {
           <View style={styles.logoInsetOverlay} pointerEvents="none" />
         </View>
         <Text style={[styles.appName, { color: colors.text.textBase }]}>
-          Coin Snap
+        Cointerest
         </Text>
       </View>
 

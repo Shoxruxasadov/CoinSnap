@@ -1,5 +1,6 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useThemeColors } from '../theme/useThemeColors';
 import MainTabs from './MainTabs';
 import SnapHistoryScreen from '../screens/SnapHistoryScreen';
 import BlogScreen from '../screens/BlogScreen';
@@ -46,11 +47,12 @@ export type MainStackParamList = {
 const Stack = createNativeStackNavigator<MainStackParamList>();
 
 export default function MainStack() {
+  const colors = useThemeColors();
   return (
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: '#fff' },
+        contentStyle: { backgroundColor: colors.background.bgAlt },
         animation: 'slide_from_right',
         fullScreenGestureEnabled: true,
       }}

@@ -56,10 +56,8 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View style={styles.logoRow}>
        
-          <Image source={require('../../../assets/logo.png')} style={styles.logoIcon} />
           <View>
-            <Text style={[styles.appName, { color: colors.text.textBase }]}>Coin Snap</Text>
-            <Text style={[styles.tagline, { color: colors.text.textTertiary }]}>AI Powered coin scanner</Text>
+            <Text style={[styles.appName, { color: colors.text.textBase }]}>Cointerest</Text>
           </View>
         </View>
         <View style={styles.headerRight}>
@@ -85,13 +83,13 @@ export default function HomeScreen() {
             style={styles.coinsImage}
             resizeMode="contain"
           />
-          <Text style={[styles.cardTitle, { color: colors.text.textBase }]}>Identify Any Currency</Text>
+          <Text style={[styles.cardTitle, { color: colors.text.textBase }]}>Scan & Identify Any Coin</Text>
           <Text style={[styles.cardSubtitle, { color: colors.text.textTertiary }]}>
-            Tap to scan button below and start{'\n'}scanning.
+          AI-powered identification with real-time market pricing
           </Text>
           <TouchableOpacity style={[styles.identifyBtn, { backgroundColor: colors.background.bgInverse }]} activeOpacity={0.8} onPress={() => stackNav?.navigate('ScannerScreen')}>
             <Camera size={24} color={colors.text.textInverse} />
-            <Text style={[styles.identifyText, { color: colors.text.textInverse }]}>Identify Now</Text>
+            <Text style={[styles.identifyText, { color: colors.text.textInverse }]}>Scan Now</Text>
           </TouchableOpacity>
         </View>
 
@@ -101,9 +99,9 @@ export default function HomeScreen() {
           onPress={() => stackNav?.navigate('Assistant')}
         >
           <View style={styles.expertContent}>
-            <Text style={[styles.expertTitle, { color: colors.text.textBase }]}>Meet Coin expert</Text>
+            <Text style={[styles.expertTitle, { color: colors.text.textBase }]}>Ask the Coin Expert</Text>
             <Text style={[styles.expertDescription, { color: colors.text.textAlt }]}>
-              Your AI numismatist for instant, accurate coin insights.
+            Ask anything about any coin, get expert answers instantly.
             </Text>
           </View>
           <Image
@@ -190,8 +188,9 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '45deg' }],
   },
   appName: {
-    fontSize: 18,
+    fontSize: 24,
     fontWeight: '600',
+    // marginBottom: 9,
   },
   tagline: {
     fontSize: 13,
@@ -209,7 +208,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 50,
     gap: 5,
-    height: 38,
+    height: 36,
   },
   proText: {
     fontSize: 16,
@@ -241,9 +240,9 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   cardTitle: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '600',
-    marginBottom: 12,
+    marginBottom: 10,
     lineHeight: 38,
     textAlign: 'center',
   },

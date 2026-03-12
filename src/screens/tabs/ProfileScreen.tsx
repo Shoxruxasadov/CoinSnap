@@ -159,7 +159,7 @@ export default function ProfileScreen() {
 
   const handleInviteFriends = async () => {
     try {
-      await Share.share({ message: 'Coin Snap - AI Powered coin scanner!' });
+      await Share.share({ message: 'Cointerest - AI Powered coin scanner!' });
     } catch {}
   };
 

@@ -1,5 +1,6 @@
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { useThemeColors } from "../theme/useThemeColors";
 import OnboardingScreen from "../screens/onboarding/OnboardingScreen";
 import GetStartedScreen from "../screens/auth/GetStartedScreen";
 import SignInScreen from "../screens/auth/SignInScreen";
@@ -34,13 +35,14 @@ export default function RootStack({
   isSkipped,
 }: RootStackProps) {
   const initialRoute = getInitialRoute(isLoggedIn, isSkipped);
+  const colors = useThemeColors();
 
   return (
     <Stack.Navigator
       initialRouteName={initialRoute}
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: "#fff" },
+        contentStyle: { backgroundColor: colors.background.bgAlt },
         animation: "slide_from_right",
         fullScreenGestureEnabled: true,
         animationDuration: 300,

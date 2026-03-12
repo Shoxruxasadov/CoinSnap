@@ -15,6 +15,8 @@ import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TamaguiProvider } from 'tamagui';
 import { useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
+import Purchases from 'react-native-purchases';
 import Toast, { BaseToastProps } from 'react-native-toast-message';
 import { Check } from 'lucide-react-native';
 import { useAuthStore } from './src/store/authStore';
@@ -96,6 +98,12 @@ export default function App() {
   });
 
   useEffect(() => {
+    if (Platform.OS === 'ios') {
+      Purchases.configure({ apiKey: 'appl_DJzcmfesyNQkAZdmnnZYOjJWPKE' });
+    }
+  }, []);
+
+  useEffect(() => {
     if ((fontsLoaded || fontError) && !loading) {
       SplashScreen.hideAsync();
     }
@@ -124,7 +132,7 @@ export default function App() {
               />
             </NavigationContainer>
           </BottomSheetModalProvider>
-          <Toast config={toastConfig} position="bottom" bottomOffset={100} visibilityTime={2000} />
+          <Toast config={toastConfig} position="bottom" bottomOffset={100} visibilityTime={2000} avoidKeyboard={false} />
         </SafeAreaProvider>
       </GestureHandlerRootView>
     </TamaguiProvider>

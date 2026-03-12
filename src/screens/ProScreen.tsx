@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -7,6 +7,8 @@ import {
   Image,
   Linking,
   Dimensions,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,22 +16,51 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { ChevronLeft, Check } from 'lucide-react-native';
 import { triggerSelection, triggerImpact } from '../lib/haptics';
+import Purchases, { PurchasesPackage } from 'react-native-purchases';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type Plan = 'monthly' | 'annual';
 
 const FEATURES = [
-  'Unlimited coin & banknote scans',
-  'Real Marketplace Insights',
-  'Accurate information',
-  'Ad-Free Experience',
+  'Unlimited Coin Identification',
+  'Real Market Value from eBay',
+  'Organize Your Collection in One Place',
+  'Join a Community of 10,000+ Collectors',
 ];
 
 export default function ProScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const [selectedPlan, setSelectedPlan] = useState<Plan>('monthly');
+  const [monthlyPkg, setMonthlyPkg] = useState<PurchasesPackage | null>(null);
+  const [annualPkg, setAnnualPkg] = useState<PurchasesPackage | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [purchasing, setPurchasing] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const offerings = await Purchases.getOfferings();
+        const current = offerings.current;
+        if (current) {
+          setMonthlyPkg(current.monthly ?? null);
+          setAnnualPkg(current.annual ?? null);
+        }
+      } catch (e) {
+        console.warn('Failed to fetch offerings:', e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const monthlyPrice = monthlyPkg?.product?.priceString ?? '$4.99';
+  const annualPrice = annualPkg?.product?.priceString ?? '$29.99';
+  const annualRaw = annualPkg?.product?.price ?? 29.99;
+  const weeklyFromAnnual = (annualRaw / 52).toFixed(2);
+  const currencySymbol = (annualPkg?.product?.priceString ?? '$29.99').replace(/[\d.,\s]/g, '') || '$';
+  const weeklyPrice = `${currencySymbol}${weeklyFromAnnual}`;
 
   const handleBack = () => {
     triggerSelection();
@@ -41,17 +72,49 @@ export default function ProScreen() {
     setSelectedPlan(plan);
   };
 
-  const handleStartTrial = () => {
+  const handlePurchase = async () => {
     triggerImpact();
-    // TODO: Implement subscription logic
+    const pkg = selectedPlan === 'monthly' ? monthlyPkg : annualPkg;
+    if (!pkg) return;
+
+    setPurchasing(true);
+    try {
+      await Purchases.purchasePackage(pkg);
+      navigation.goBack();
+    } catch (e: any) {
+      if (!e.userCancelled) {
+        Alert.alert('Error', e.message || 'Purchase failed');
+      }
+    } finally {
+      setPurchasing(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    triggerSelection();
+    setPurchasing(true);
+    try {
+      const info = await Purchases.restorePurchases();
+      const hasActive = Object.keys(info.entitlements.active).length > 0;
+      if (hasActive) {
+        Alert.alert('Restored', 'Your subscription has been restored.');
+        navigation.goBack();
+      } else {
+        Alert.alert('No Subscription', 'No active subscription found.');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Restore failed');
+    } finally {
+      setPurchasing(false);
+    }
   };
 
   const handleTerms = () => Linking.openURL('https://example.com/terms');
-  const handleRestore = () => {
-    triggerSelection();
-    // TODO: Implement restore purchases
-  };
   const handlePrivacy = () => Linking.openURL('https://example.com/privacy');
+
+  const priceDescription = selectedPlan === 'monthly'
+    ? `3-day free trial, then ${monthlyPrice}/month`
+    : `${annualPrice}/year (${weeklyPrice}/week). Cancel anytime`;
 
   return (
     <View style={styles.container}>
@@ -63,7 +126,7 @@ export default function ProScreen() {
       />
       <LinearGradient
         colors={['#0A0A0A00', '#0A0A0AFF']}
-        locations={[0.1,0.9]}
+        locations={[0.1, 0.9]}
         style={styles.gradientOverlay}
       />
 
@@ -76,7 +139,7 @@ export default function ProScreen() {
 
         <Text style={styles.title}>Upgrade to PRO</Text>
         <Text style={styles.subtitle}>
-          Collect cards and enjoy exclusive features and{'\n'}benefits
+          Unlock Full Value.{'\n'}Unlimited scans. Instant value. Market prices. 
         </Text>
 
         <View style={styles.featuresList}>
@@ -88,65 +151,80 @@ export default function ProScreen() {
           ))}
         </View>
 
-        <View style={styles.plansRow}>
-          <TouchableOpacity
-            style={[
-              styles.planCard,
-              selectedPlan === 'monthly' && styles.planCardSelected,
-            ]}
-            onPress={() => handleSelectPlan('monthly')}
-            activeOpacity={0.8}
-          >
-            <View style={styles.planHeader}>
-              <Text style={styles.planTitle}>Monthly</Text>
-              <View
+        {loading ? (
+          <ActivityIndicator color="#D4A84B" style={{ marginBottom: 40 }} />
+        ) : (
+          <>
+            <View style={styles.plansRow}>
+              <TouchableOpacity
                 style={[
-                  styles.radio,
-                  selectedPlan === 'monthly' && styles.radioSelected,
+                  styles.planCard,
+                  selectedPlan === 'monthly' && styles.planCardSelected,
                 ]}
+                onPress={() => handleSelectPlan('monthly')}
+                activeOpacity={0.8}
               >
-                {selectedPlan === 'monthly' && <Check size={14} color="#000" strokeWidth={3} />}
-              </View>
-            </View>
-            <Text style={styles.planSub}>3 day free trial</Text>
-          </TouchableOpacity>
+                <View style={styles.planHeader}>
+                  <Text style={styles.planTitle}>Monthly</Text>
+                  <View
+                    style={[
+                      styles.radio,
+                      selectedPlan === 'monthly' && styles.radioSelected,
+                    ]}
+                  >
+                    {selectedPlan === 'monthly' && <Check size={14} color="#000" strokeWidth={3} />}
+                  </View>
+                </View>
+                <Text style={styles.planPrice}>{monthlyPrice}/month</Text>
+              </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[
-              styles.planCard,
-              selectedPlan === 'annual' && styles.planCardSelected,
-            ]}
-            onPress={() => handleSelectPlan('annual')}
-            activeOpacity={0.8}
-          >
-            <View style={styles.planHeader}>
-              <Text style={styles.planTitle}>Annual</Text>
-              <View
+              <TouchableOpacity
                 style={[
-                  styles.radio,
-                  selectedPlan === 'annual' && styles.radioSelected,
+                  styles.planCard,
+                  selectedPlan === 'annual' && styles.planCardSelected,
                 ]}
+                onPress={() => handleSelectPlan('annual')}
+                activeOpacity={0.8}
               >
-                {selectedPlan === 'annual' && <Check size={14} color="#000" strokeWidth={3} />}
-              </View>
+                <View style={styles.planHeader}>
+                  <Text style={styles.planTitle}>Annual</Text>
+                  <View
+                    style={[
+                      styles.radio,
+                      selectedPlan === 'annual' && styles.radioSelected,
+                    ]}
+                  >
+                    {selectedPlan === 'annual' && <Check size={14} color="#000" strokeWidth={3} />}
+                  </View>
+                </View>
+                <Text style={styles.planPrice}>{annualPrice}/year</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={styles.planSub}>3 day free trial</Text>
-          </TouchableOpacity>
-        </View>
 
-        <Text style={styles.priceText}>
-          1st month $0.99, then just $3.99/month
-        </Text>
+            <Text style={styles.priceText}>{priceDescription}</Text>
 
-        <TouchableOpacity style={styles.ctaBtn} onPress={handleStartTrial} activeOpacity={0.85}>
-          <Text style={styles.ctaText}>Start 3 day free trial</Text>
-        </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.ctaBtn, purchasing && { opacity: 0.6 }]}
+              onPress={handlePurchase}
+              activeOpacity={0.85}
+              disabled={purchasing}
+            >
+              {purchasing ? (
+                <ActivityIndicator color="#000" />
+              ) : (
+                <Text style={styles.ctaText}>
+                  CONTINUE
+                </Text>
+              )}
+            </TouchableOpacity>
+          </>
+        )}
 
         <View style={styles.footer}>
           <TouchableOpacity onPress={handleTerms}>
             <Text style={styles.footerLink}>Terms of Service</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleRestore}>
+          <TouchableOpacity onPress={handleRestore} disabled={purchasing}>
             <Text style={styles.footerLink}>Restore</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handlePrivacy}>
@@ -211,7 +289,7 @@ const styles = StyleSheet.create({
   featuresList: {
     marginBottom: 28,
     gap: 16,
-    marginLeft: 20,
+    marginLeft: 2,
   },
   featureRow: {
     flexDirection: 'row',
@@ -252,9 +330,10 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginBottom: 2,
   },
-  planSub: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.5)',
+  planPrice: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '500',
   },
   radio: {
     width: 24,

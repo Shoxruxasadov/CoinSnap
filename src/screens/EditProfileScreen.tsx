@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { ChevronLeft, Check } from 'lucide-react-native';
+import { ChevronLeft, Check, Trash2 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -21,6 +21,8 @@ import { supabase } from '../lib/supabase';
 import { useSupabaseSession } from '../lib/useSupabaseSession';
 import { useThemeColors } from '../theme/useThemeColors';
 import { triggerSelection, triggerImpact } from '../lib/haptics';
+import { useAuthStore } from '../store/authStore';
+import { CommonActions } from '@react-navigation/native';
 import AvatarPlaceholderSvg from '../../assets/profile/avatar.svg';
 
 type Nav = NativeStackNavigationProp<MainStackParamList>;
@@ -36,7 +38,9 @@ export default function EditProfileScreen() {
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [loading, setLoading] = useState(true);
+  const resetSkipped = useAuthStore((s) => s.resetSkipped);
 
   const email = session?.user?.email ?? '';
 
@@ -179,6 +183,39 @@ export default function EditProfileScreen() {
     }
   };
 
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to permanently delete your account? All your data, coins, collections, and posts will be removed. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              const { error } = await supabase.functions.invoke('delete-account');
+              if (error) throw error;
+
+              await supabase.auth.signOut();
+              resetSkipped();
+
+              navigation.dispatch(
+                CommonActions.reset({ index: 0, routes: [{ name: 'Auth' as any }] })
+              );
+            } catch (e: any) {
+              console.error('Delete account error:', e);
+              Alert.alert('Error', 'Failed to delete account. Please try again.');
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (loading) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: colors.background.bgAlt }]}>
@@ -213,7 +250,7 @@ export default function EditProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.content}>
+      <View style={[styles.content, { paddingBottom: insets.bottom }]}>
         <TouchableOpacity style={styles.avatarSection} onPress={handleChangePhoto}>
           {displayAvatar ? (
             <Image source={{ uri: displayAvatar }} style={styles.avatar} />
@@ -247,6 +284,29 @@ export default function EditProfileScreen() {
             editable={false}
           />
         </View>
+
+        <View style={{ flex: 1 }} />
+
+        <View style={styles.deleteSection}>
+          <TouchableOpacity
+            style={styles.deleteBtn}
+            onPress={handleDeleteAccount}
+            activeOpacity={0.7}
+            disabled={deleting}
+          >
+            {deleting ? (
+              <ActivityIndicator size="small" color="#E53935" />
+            ) : (
+              <>
+                <Trash2 size={20} color="#E53935" />
+                <Text style={styles.deleteBtnText}>Delete Account</Text>
+              </>
+            )}
+          </TouchableOpacity>
+          <Text style={[styles.deleteHint, { color: colors.text.textTertiary }]}>
+            This will permanently delete your account and all data
+          </Text>
+        </View>
       </View>
     </View>
   );
@@ -278,6 +338,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   content: {
+    flex: 1,
     paddingHorizontal: 20,
     paddingTop: 24,
   },
@@ -313,5 +374,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 14,
     fontSize: 16,
+  },
+  deleteSection: {
+    marginTop: 48,
+    alignItems: 'center',
+  },
+  deleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    borderWidth: 1.5,
+    borderColor: '#E53935',
+    borderRadius: 28,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    width: '100%',
+  },
+  deleteBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#E53935',
+  },
+  deleteHint: {
+    fontSize: 13,
+    marginTop: 10,
+    textAlign: 'center',
   },
 });
