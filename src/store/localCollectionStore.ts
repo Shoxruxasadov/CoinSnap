@@ -62,9 +62,15 @@ export const useLocalCollectionStore = create<LocalCollectionState>()(
       },
 
       removeCoinFromGeneral: (coinId: number) => {
-        set((state) => ({
-          generalCoinIds: state.generalCoinIds.filter((id) => id !== coinId),
-        }));
+        set((state) => {
+          const stillInHistory = state.snapHistoryIds.includes(coinId);
+          return {
+            generalCoinIds: state.generalCoinIds.filter((id) => id !== coinId),
+            coins: stillInHistory
+              ? state.coins
+              : state.coins.filter((c) => c.id !== coinId),
+          };
+        });
       },
 
       addCoin: (coin: LocalCoin) => {
@@ -87,10 +93,15 @@ export const useLocalCollectionStore = create<LocalCollectionState>()(
       },
 
       removeFromSnapHistory: (coinId: number) => {
-        set((state) => ({
-          snapHistoryIds: state.snapHistoryIds.filter((id) => id !== coinId),
-          coins: state.coins.filter((c) => c.id !== coinId),
-        }));
+        set((state) => {
+          const stillInCollection = state.generalCoinIds.includes(coinId);
+          return {
+            snapHistoryIds: state.snapHistoryIds.filter((id) => id !== coinId),
+            coins: stillInCollection
+              ? state.coins
+              : state.coins.filter((c) => c.id !== coinId),
+          };
+        });
       },
 
       getSnapHistory: () => {

@@ -11,7 +11,7 @@ import Animated from 'react-native-reanimated';
 import { FlashList } from '@shopify/flash-list';
 import { ChevronLeft, MoreVertical, FolderPlus, Trash2, Plus, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, CommonActions } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { MainStackParamList } from '../navigation/MainStack';
@@ -198,6 +198,10 @@ export default function SnapHistoryScreen() {
 
   const handleOpenAddTo = () => {
     actionSheetRef.current?.close();
+    if (!userId) {
+      navigation.dispatch(CommonActions.navigate({ name: 'GetStarted' }));
+      return;
+    }
     setTimeout(() => addToSheetRef.current?.expand(), 200);
   };
 

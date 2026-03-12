@@ -12,8 +12,8 @@ Return ONLY valid JSON with these exact fields:
   "year_end": 1947,
   "mintage": 20000000,
   "composition": "Short composition (e.g. Silver & Copper)",
-  "estimated_price_min": 4.23,
-  "estimated_price_max": 5.80,
+  "estimated_price_min": 15.00,
+  "estimated_price_max": 35.00,
   "grade_label": "Grade label (e.g. Very Fine)",
   "grade_value": 20,
   "denomination": "Denomination with detail (e.g. Half Dollar (50 cents))",
@@ -27,11 +27,33 @@ Return ONLY valid JSON with these exact fields:
   "ai_opinion": "Your expert opinion about this coin's collectibility, market demand, and notable features."
 }
 
-Important rules:
+CRITICAL GRADING RULES — Be ACCURATE about the coin's condition:
+- Look carefully at the HIGH POINTS (hair details, eagle feathers, lettering sharpness)
+- If the coin has LUSTER (shine) and SHARP DETAILS, it's likely EF-40 or higher
+- If details are VERY SHARP with minimal wear, grade AU-50 to AU-58
+- If the coin looks UNCIRCULATED (no wear on high points), grade MS-60 to MS-65
+- DO NOT under-grade. If unsure between two grades, choose the HIGHER one.
+
+CRITICAL PRICING RULES — Use REAL eBay/dealer market prices:
+- For US Washington Quarters (clad, 1965+):
+  * VF-20 to EF-40: $5 - $15
+  * AU-50 to AU-58: $15 - $35
+  * MS-60 to MS-63: $25 - $60
+  * MS-64 to MS-65: $40 - $100
+  * MS-66+: $80 - $300+
+- For US Washington Quarters (silver, pre-1965):
+  * VF-20: $8 - $15 (silver value + premium)
+  * EF-40: $12 - $25
+  * AU-50+: $20 - $50
+  * MS-63+: $40 - $150+
+- Price should MATCH the grade you assign
+- If coin looks clean and lustrous, it's probably AU or MS grade = higher price
+- Check eBay sold listings mentally for this exact coin type and grade
+
+Other rules:
 - year_start and year_end: if this is a single year coin, set both to the same value
 - mintage: total mintage number, use null if unknown
-- estimated_price_min/max: estimated market value in USD based on visible condition
-- grade_value: Sheldon scale 1-70, estimate from photo quality
+- grade_value: Sheldon scale 1-70. IMPORTANT: If the coin shows good luster, sharp details, and minimal wear, it should be graded AU-50 or higher. Most coins photographed by collectors are in better condition than you think.
 - All numeric fields should be numbers (not strings)
 - If you cannot determine a field, use null
 - Do NOT wrap the JSON in markdown code blocks`;

@@ -21,6 +21,10 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "profiles_select" ON public.profiles
   FOR SELECT TO authenticated USING (true);
 
+-- Users can insert their own profile
+CREATE POLICY "profiles_insert" ON public.profiles
+  FOR INSERT TO authenticated WITH CHECK (auth.uid() = id);
+
 -- Users can only update their own profile
 CREATE POLICY "profiles_update" ON public.profiles
   FOR UPDATE TO authenticated USING (auth.uid() = id);

@@ -253,12 +253,22 @@ export default function CollectionsScreen() {
     fetchCollections(true);
   }, [session?.user?.id]);
 
-  // Update local collection when generalCoinIds changes (for non-logged users)
+  // Update local collection when generalCoinIds or localCoins changes (for non-logged users)
   useEffect(() => {
     if (!session?.user?.id) {
       setCollections([localGeneralCollection]);
+      // Also update coinsMap from localCoins
+      const localCoinsMap: Record<number, CoinImageRow> = {};
+      localCoins.forEach((c) => {
+        localCoinsMap[c.id] = {
+          id: c.id,
+          front_image_url: c.front_image_url,
+          back_image_url: c.back_image_url,
+        };
+      });
+      setCoinsMap(localCoinsMap);
     }
-  }, [generalCoinIds, session?.user?.id, localGeneralCollection]);
+  }, [generalCoinIds, localCoins, session?.user?.id, localGeneralCollection]);
 
   const allCoinIds = useMemo(() => {
     const set = new Set<number>();

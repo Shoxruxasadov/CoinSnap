@@ -19,3 +19,6 @@ CREATE POLICY "coins_insert_own_scan" ON public.coins
 
 CREATE POLICY "coins_update_own_scan" ON public.coins
   FOR UPDATE TO authenticated USING (auth.uid() = scanned_by_user_id);
+
+CREATE POLICY "coins_delete_own_scan" ON public.coins
+  FOR DELETE TO authenticated USING (auth.uid() = scanned_by_user_id);

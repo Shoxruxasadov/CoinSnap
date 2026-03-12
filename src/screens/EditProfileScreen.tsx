@@ -154,12 +154,12 @@ export default function EditProfileScreen() {
 
       const { error } = await supabase
         .from('profiles')
-        .update({
+        .upsert({
+          id: userId,
           full_name: fullName.trim() || null,
           avatar_url: finalAvatarUrl,
           updated_at: new Date().toISOString(),
-        })
-        .eq('id', userId);
+        });
 
       if (error) throw error;
 

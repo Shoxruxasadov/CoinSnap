@@ -22,6 +22,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { X, Zap, ImagePlus, Info, Crown } from 'lucide-react-native';
+import Svg, { Defs, Rect, Mask, Circle as SvgCircle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -59,19 +60,76 @@ const GUIDE_PAGES = [
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CIRCLE_SIZE = SCREEN_WIDTH * 0.65;
 const CIRCLE_RATIO = 0.65;
-const OVERLAY_BORDER = SCREEN_HEIGHT;
 const CIRCLE_TOP = (SCREEN_HEIGHT - CIRCLE_SIZE) / 2.2;
 const CIRCLE_CENTER_Y = CIRCLE_TOP + CIRCLE_SIZE / 2;
 
 
 const ANALYSIS_STEPS = [
-  { percent: 15, label: 'Processing images', seconds: 5 },
-  { percent: 30, label: 'Removing background', seconds: 8 },
-  { percent: 50, label: 'Analyzing coin', seconds: 10 },
-  { percent: 70, label: 'Extracting details', seconds: 10 },
-  { percent: 85, label: 'Generating report', seconds: 5 },
-  { percent: 100, label: 'Almost done', seconds: 3 },
+  { percent: 20, label: 'Removing background', seconds: 8 },
+  { percent: 40, label: 'Uploading images', seconds: 4 },
+  { percent: 55, label: 'Analyzing coin', seconds: 10 },
+  { percent: 70, label: 'Identifying details', seconds: 8 },
+  { percent: 80, label: 'Checking market', seconds: 6 },
+  { percent: 90, label: 'Generating report', seconds: 5 },
+  { percent: 95, label: 'Finalizing', seconds: 3 },
+  { percent: 100, label: 'Almost done', seconds: 1 },
 ];
+
+const DIGIT_HEIGHT = 56;
+const SMALL_DIGIT_HEIGHT = 22;
+
+const AnimatedDigit = React.memo(({ digit, small }: { digit: string; small?: boolean }) => {
+  const h = small ? SMALL_DIGIT_HEIGHT : DIGIT_HEIGHT;
+  const animY = useRef(new Animated.Value(-h)).current;
+  const prevDigit = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (prevDigit.current !== digit) {
+      prevDigit.current = digit;
+      animY.setValue(-h);
+      Animated.spring(animY, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 100,
+        friction: 12,
+      }).start();
+    }
+  }, [digit]);
+
+  return (
+    <View style={[digitStyles.slot, { height: h }]}>
+      <Animated.Text style={[small ? digitStyles.smallText : digitStyles.text, { transform: [{ translateY: animY }] }]}>
+        {digit}
+      </Animated.Text>
+    </View>
+  );
+});
+
+const digitStyles = StyleSheet.create({
+  slot: {
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  text: {
+    color: '#fff',
+    fontSize: 48,
+    fontWeight: '800',
+    fontFamily: Platform.select({
+      ios: 'SF Compact Rounded',
+      default: undefined,
+    }),
+  },
+  smallText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    fontFamily: Platform.select({
+      ios: 'SF Compact Rounded',
+      default: undefined,
+    }),
+  },
+});
 
 export default function ScannerScreen() {
   const insets = useSafeAreaInsets();
@@ -128,8 +186,11 @@ export default function ScannerScreen() {
   const displayZoom = (0.5 + zoom * 14.5).toFixed(1);
 
   const progressAnim = useRef(new Animated.Value(0)).current;
-  const percentAnim = useRef(new Animated.Value(1)).current;
-  const prevStepRef = useRef(-1);
+  const [displayPercent, setDisplayPercent] = useState(0);
+  const displayPercentRef = useRef(0);
+  const countTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [displaySeconds, setDisplaySeconds] = useState(0);
+  const secondsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!permission?.granted) {
@@ -139,41 +200,89 @@ export default function ScannerScreen() {
 
   useEffect(() => {
     if (!processing) {
-      prevStepRef.current = -1;
+      progressAnim.setValue(0);
       return;
     }
-    let idx = 0;
-    setAnalysisStepIndex(0);
-    progressAnim.setValue(0);
-
-    const animate = () => {
-      if (idx >= ANALYSIS_STEPS.length) return;
-      const target = ANALYSIS_STEPS[idx].percent / 100;
-      Animated.timing(progressAnim, {
-        toValue: target,
-        duration: 1500,
-        useNativeDriver: false,
-      }).start();
-      setAnalysisStepIndex(idx);
-      idx++;
-      if (idx < ANALYSIS_STEPS.length) {
-        setTimeout(animate, 2000);
-      }
-    };
-    animate();
-  }, [processing]);
+    const target = (ANALYSIS_STEPS[analysisStepIndex]?.percent ?? 0) / 100;
+    Animated.timing(progressAnim, {
+      toValue: target,
+      duration: 1200,
+      useNativeDriver: false,
+    }).start();
+  }, [analysisStepIndex, processing]);
 
   useEffect(() => {
-    if (!processing) return;
-    if (prevStepRef.current === analysisStepIndex) return;
-    prevStepRef.current = analysisStepIndex;
-    percentAnim.setValue(0);
-    Animated.spring(percentAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      tension: 100,
-      friction: 12,
-    }).start();
+    if (!processing) {
+      displayPercentRef.current = 0;
+      setDisplayPercent(0);
+      if (countTimerRef.current) {
+        clearInterval(countTimerRef.current);
+        countTimerRef.current = null;
+      }
+      return;
+    }
+
+    const target = currentAnalysis.percent;
+    const start = displayPercentRef.current;
+    if (start >= target) return;
+
+    const STEP = 5;
+    const steps = Math.ceil((target - start) / STEP);
+    const tickMs = Math.max(200, Math.floor(1800 / steps));
+    let current = start;
+
+    if (countTimerRef.current) clearInterval(countTimerRef.current);
+
+    countTimerRef.current = setInterval(() => {
+      current += STEP;
+      if (current >= target) current = target;
+      displayPercentRef.current = current;
+      setDisplayPercent(current);
+      if (current >= target) {
+        if (countTimerRef.current) clearInterval(countTimerRef.current);
+        countTimerRef.current = null;
+      }
+    }, tickMs);
+
+    return () => {
+      if (countTimerRef.current) {
+        clearInterval(countTimerRef.current);
+        countTimerRef.current = null;
+      }
+    };
+  }, [analysisStepIndex, processing]);
+
+  useEffect(() => {
+    if (!processing) {
+      setDisplaySeconds(0);
+      if (secondsTimerRef.current) {
+        clearInterval(secondsTimerRef.current);
+        secondsTimerRef.current = null;
+      }
+      return;
+    }
+
+    let current = currentAnalysis.seconds;
+    setDisplaySeconds(current);
+
+    if (secondsTimerRef.current) clearInterval(secondsTimerRef.current);
+
+    secondsTimerRef.current = setInterval(() => {
+      current--;
+      if (current <= 1) {
+        current = 1;
+        if (secondsTimerRef.current) clearInterval(secondsTimerRef.current);
+        secondsTimerRef.current = null;
+      }
+      setDisplaySeconds(current);
+    }, 1000);
+
+    return () => {
+      if (secondsTimerRef.current) {
+        clearInterval(secondsTimerRef.current);
+        secondsTimerRef.current = null;
+      }
+    };
   }, [analysisStepIndex, processing]);
 
   const handleClose = () => {
@@ -365,13 +474,15 @@ export default function ScannerScreen() {
 
   const startProcessing = async (front: string, back: string) => {
     setProcessing(true);
+    setAnalysisStepIndex(0); // 20% – Removing background
 
     try {
-      // Background removal + standardization (parallel)
       const [processedFront, processedBack] = await Promise.all([
         processCoinImage(front).then(r => r.processedUri).catch(() => front),
         processCoinImage(back).then(r => r.processedUri).catch(() => back),
       ]);
+
+      setAnalysisStepIndex(1); // 45% – Uploading images
 
       const [frontUrl, backUrl] = await Promise.all([
         uploadImage(processedFront, 'front'),
@@ -382,7 +493,34 @@ export default function ScannerScreen() {
         throw new Error('Failed to upload images');
       }
 
+      setAnalysisStepIndex(2); // 55% – Analyzing coin
+
+      let analysisComplete = false;
+      const timers: ReturnType<typeof setTimeout>[] = [];
+      
+      // Gradual progress during analysis
+      timers.push(setTimeout(() => {
+        if (!analysisComplete) setAnalysisStepIndex(3); // 70% – Identifying details
+      }, 4000));
+      
+      timers.push(setTimeout(() => {
+        if (!analysisComplete) setAnalysisStepIndex(4); // 80% – Checking market
+      }, 8000));
+      
+      timers.push(setTimeout(() => {
+        if (!analysisComplete) setAnalysisStepIndex(5); // 90% – Generating report
+      }, 12000));
+      
+      timers.push(setTimeout(() => {
+        if (!analysisComplete) setAnalysisStepIndex(6); // 95% – Finalizing
+      }, 18000));
+
       const data = await analyzeCoinInApp(frontUrl, backUrl, userId);
+      analysisComplete = true;
+      timers.forEach(t => clearTimeout(t));
+
+      setAnalysisStepIndex(7); // 100% – Almost done
+      await new Promise(resolve => setTimeout(resolve, 600));
 
       setProcessing(false);
       navigation.replace('ScanResult', { coin: data.coin });
@@ -434,13 +572,31 @@ export default function ScannerScreen() {
 
       {/* Dark overlay with circle cutout */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        <View style={styles.overlayMask} />
-        <View
-          style={[
-            styles.dashedCircle,
-            { borderColor: step === 1 ? '#4CAF50' : '#FFFFFF' },
-          ]}
-        />
+        <Svg width={SCREEN_WIDTH} height={SCREEN_HEIGHT}>
+          <Defs>
+            <Mask id="circleMask">
+              <Rect x="0" y="0" width={SCREEN_WIDTH} height={SCREEN_HEIGHT} fill="white" />
+              <SvgCircle cx={SCREEN_WIDTH / 2} cy={CIRCLE_CENTER_Y} r={CIRCLE_SIZE / 2} fill="black" />
+            </Mask>
+          </Defs>
+          <Rect
+            x="0"
+            y="0"
+            width={SCREEN_WIDTH}
+            height={SCREEN_HEIGHT}
+            fill="rgba(0,0,0,0.55)"
+            mask="url(#circleMask)"
+          />
+          <SvgCircle
+            cx={SCREEN_WIDTH / 2}
+            cy={CIRCLE_CENTER_Y}
+            r={CIRCLE_SIZE / 2 - 4}
+            fill="none"
+            stroke={step === 1 ? '#4CAF50' : '#FFFFFF'}
+            strokeWidth={3}
+            strokeDasharray="12 8"
+          />
+        </Svg>
       </View>
 
       {/* Header */}
@@ -568,22 +724,12 @@ export default function ScannerScreen() {
             </View>
 
             <View style={styles.percentContainer}>
-              <Animated.Text
-                style={[
-                  styles.processingPercent,
-                  {
-                    opacity: percentAnim,
-                    transform: [{
-                      translateY: percentAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [24, 0],
-                      }),
-                    }],
-                  },
-                ]}
-              >
-                {currentAnalysis.percent}%
-              </Animated.Text>
+              <View style={styles.digitsRow}>
+                {String(displayPercent).split('').map((d, i, arr) => (
+                  <AnimatedDigit key={arr.length - 1 - i} digit={d} />
+                ))}
+                <Text style={styles.percentSign}>%</Text>
+              </View>
             </View>
 
             <View style={styles.progressBarBg}>
@@ -594,7 +740,12 @@ export default function ScannerScreen() {
               <Text style={styles.processingLabel}>{currentAnalysis.label}</Text>
             </View>
 
-            <Text style={styles.processingTime}>{currentAnalysis.seconds} second</Text>
+            <View style={styles.secondsRow}>
+              {String(displaySeconds).split('').map((d, i, arr) => (
+                <AnimatedDigit key={`s-${arr.length - 1 - i}`} digit={d} small />
+              ))}
+              <Text style={styles.processingTime}> second</Text>
+            </View>
           </View>
         </View>
       )}
@@ -646,8 +797,6 @@ export default function ScannerScreen() {
     </View>
   );
 }
-
-const OVERLAY_COLOR = 'rgba(0,0,0,0.55)';
 
 const styles = StyleSheet.create({
   container: {
@@ -742,27 +891,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // Overlay
-  overlayMask: {
-    position: 'absolute',
-    width: CIRCLE_SIZE,
-    height: CIRCLE_SIZE,
-    top: CIRCLE_CENTER_Y - CIRCLE_SIZE / 2,
-    left: (SCREEN_WIDTH - CIRCLE_SIZE) / 2,
-    borderRadius: CIRCLE_SIZE / 2 + OVERLAY_BORDER,
-    borderWidth: OVERLAY_BORDER,
-    borderColor: OVERLAY_COLOR,
-  },
-  dashedCircle: {
-    position: 'absolute',
-    width: CIRCLE_SIZE - 8,
-    height: CIRCLE_SIZE - 8,
-    top: CIRCLE_CENTER_Y - CIRCLE_SIZE / 2 + 4,
-    left: (SCREEN_WIDTH - CIRCLE_SIZE) / 2 + 4,
-    borderRadius: (CIRCLE_SIZE - 8) / 2,
-    borderWidth: 3,
-    borderStyle: 'dashed',
-  },
 
   // Thumbnails
   thumbnailsContainer: {
@@ -937,17 +1065,21 @@ const styles = StyleSheet.create({
     borderRadius: 60,
   },
   percentContainer: {
-    height: 58,
-    overflow: 'hidden',
-    justifyContent: 'center',
-    alignItems: 'center',
     marginBottom: 16,
+    alignItems: 'center',
   },
-  processingPercent: {
+  digitsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  percentSign: {
     color: '#fff',
     fontSize: 48,
     fontWeight: '800',
-    ...(Platform.OS === 'ios' ? { fontFamily: '.SFCompactRounded-Heavy' } : {}),
+    fontFamily: Platform.select({
+      ios: 'SF Compact Rounded',
+      default: undefined,
+    }),
   },
   progressBarBg: {
     width: '100%',
@@ -973,13 +1105,24 @@ const styles = StyleSheet.create({
     color: '#DFAC4C',
     fontSize: 15,
     fontWeight: '600',
-    ...(Platform.OS === 'ios' ? { fontFamily: '.SFCompactRounded-Semibold' } : {}),
+    fontFamily: Platform.select({
+      ios: 'SF Compact Rounded',
+      default: undefined,
+    }),
+  },
+  secondsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   processingTime: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
-    ...(Platform.OS === 'ios' ? { fontFamily: '.SFCompactRounded-Bold' } : {}),
+    fontFamily: Platform.select({
+      ios: 'SF Compact Rounded',
+      default: undefined,
+    }),
   },
 
   // Snap Guide modal

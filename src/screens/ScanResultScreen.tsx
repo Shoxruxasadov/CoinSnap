@@ -38,6 +38,7 @@ import {
   useRoute,
   RouteProp,
   useFocusEffect,
+  CommonActions,
 } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import BottomSheet, {
@@ -429,6 +430,11 @@ export default function ScanResultScreen() {
 
   const openNewCollectionSheet = () => {
     triggerSelection();
+    if (!userId) {
+      addToSheetRef.current?.close();
+      navigation.dispatch(CommonActions.navigate({ name: 'GetStarted' }));
+      return;
+    }
     addToSheetRef.current?.close();
     setTimeout(() => newCollectionSheetRef.current?.expand(), 200);
   };

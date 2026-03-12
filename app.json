@@ -16,7 +16,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.webnum.coinsnap",
       "appleTeamId": "2J688D34T8",
-      "buildNumber": "11",
+      "buildNumber": "13",
       "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
@@ -26,7 +26,7 @@
       "icon": "./assets/icon.png",
       "predictiveBackGestureEnabled": false,
       "package": "com.webnum.coinsnap",
-      "versionCode": 11
+      "versionCode": 13
     },
     "web": {
       "favicon": "./assets/icon.png"
