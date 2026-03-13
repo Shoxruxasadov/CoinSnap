@@ -451,10 +451,10 @@ export default function ScannerScreen() {
   };
 
   const handlePickFromGallery = async () => {
-    // if (!frontImage && !backImage && scanCount >= 1 && !isPro) {
-    //   navigation.navigate('Pro');
-    //   return;
-    // }
+    if (!frontImage && !backImage && scanCount >= 1 && !isPro) {
+      navigation.navigate('Pro');
+      return;
+    }
 
     triggerSelection();
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
