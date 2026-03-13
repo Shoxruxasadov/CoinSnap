@@ -172,62 +172,52 @@ export async function processCoinImage(imageUri: string): Promise<{
 
 async function removeBackground(imageUri: string): Promise<string | null> {
   try {
-    const apiKey = await getGeminiKey();
-    const base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: 'base64' });
+    console.log('Removing background via rembg API...');
 
-    const models = ['gemini-2.5-flash-image', 'gemini-3.1-flash-image-preview'];
-
-    for (const model of models) {
-      try {
-        console.log(`Removing background via Gemini ${model}...`);
-
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{
-                parts: [
-                  { text: 'Remove the background from this coin image completely. Keep only the coin itself on a fully transparent background. Do not alter, redraw, or modify the coin in any way — preserve every detail exactly as it is. Output a PNG with transparent background.' },
-                  { inline_data: { mime_type: 'image/png', data: base64 } },
-                ],
-              }],
-              generationConfig: {
-                responseModalities: ['TEXT', 'IMAGE'],
-              },
-            }),
-          }
-        );
-
-        if (!res.ok) {
-          const errText = await res.text();
-          console.warn(`Gemini ${model} BG removal failed: ${res.status}`, errText);
-          continue;
-        }
-
-        const data = await res.json();
-        const parts = data.candidates?.[0]?.content?.parts;
-        if (!parts) {
-          console.warn(`Gemini ${model}: no parts in response`);
-          continue;
-        }
-
-        for (const part of parts) {
-          if (part.inline_data?.data) {
-            const outputPath = `${FileSystem.cacheDirectory}bg_removed_${Date.now()}.png`;
-            await FileSystem.writeAsStringAsync(outputPath, part.inline_data.data, { encoding: 'base64' });
-            console.log(`BG removed successfully via Gemini ${model}`);
-            return outputPath;
-          }
-        }
-        console.warn(`Gemini ${model}: response had parts but no image data`);
-      } catch (e) {
-        console.warn(`Gemini ${model} BG error:`, e);
-      }
+    const fileInfo = await FileSystem.getInfoAsync(imageUri);
+    if (!fileInfo.exists) {
+      console.warn('Image file does not exist:', imageUri);
+      return null;
     }
 
-    return null;
+    const formData = new FormData();
+    formData.append('file', {
+      uri: imageUri,
+      type: 'image/png',
+      name: 'coin.png',
+    } as any);
+
+    const res = await fetch('http://46.202.191.37:8000/remove-bg', {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Accept': 'image/png',
+      },
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.warn('rembg API failed:', res.status, errText);
+      return null;
+    }
+
+    const blob = await res.blob();
+    const reader = new FileReader();
+
+    const resultBase64 = await new Promise<string>((resolve, reject) => {
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const base64Data = dataUrl.split(',')[1];
+        resolve(base64Data);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
+    const outputPath = `${FileSystem.cacheDirectory}bg_removed_${Date.now()}.png`;
+    await FileSystem.writeAsStringAsync(outputPath, resultBase64, { encoding: 'base64' });
+    console.log('BG removed successfully via rembg API');
+    return outputPath;
   } catch (e) {
     console.warn('removeBackground error:', e);
     return null;

@@ -55,6 +55,7 @@ import { searchEbayProducts, EbayItem } from "../lib/ebaySearch";
 import { formatPriceRange } from "../lib/currency";
 import { useSettingsStore } from "../store/settingsStore";
 import Toast from "react-native-toast-message";
+import Purchases from "react-native-purchases";
 import type { CollectionRow } from "./tabs/CollectionsScreen";
 import { useLocalCollectionStore } from "../store/localCollectionStore";
 import { ChevronRight } from "lucide-react-native";
@@ -246,8 +247,20 @@ export default function ScanResultScreen() {
   const [creating, setCreating] = useState(false);
   const [ebayItems, setEbayItems] = useState<EbayItem[]>([]);
   const [ebayLoading, setEbayLoading] = useState(true);
+  const [isPro, setIsPro] = useState(false);
 
   const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const info = await Purchases.getCustomerInfo();
+        setIsPro(Object.keys(info.entitlements.active).length > 0);
+      } catch {
+        setIsPro(false);
+      }
+    })();
+  }, []);
   const tabsScrollRef = useRef<ScrollView>(null);
   const moreSheetRef = useRef<BottomSheet>(null);
   const addToSheetRef = useRef<BottomSheet>(null);
@@ -296,8 +309,6 @@ export default function ScanResultScreen() {
     collections.forEach((c) => (c.coin_ids ?? []).forEach((id) => ids.add(id)));
     return Array.from(ids);
   }, [collections]);
-
-  const addToMaxHeight = SCREEN_HEIGHT * 0.8;
 
   const fetchCollections = useCallback(async () => {
     if (!userId) return;
@@ -431,6 +442,11 @@ export default function ScanResultScreen() {
 
   const openNewCollectionSheet = () => {
     triggerSelection();
+    if (!isPro) {
+      addToSheetRef.current?.close();
+      navigation.navigate('Pro');
+      return;
+    }
     if (!userId) {
       addToSheetRef.current?.close();
       navigation.dispatch(CommonActions.navigate({ name: 'GetStarted' }));
@@ -1179,7 +1195,8 @@ export default function ScanResultScreen() {
         ref={addToSheetRef}
         index={-1}
         enableDynamicSizing
-        maxDynamicContentSize={addToMaxHeight}
+        snapPoints={[320]}
+        maxDynamicContentSize={SCREEN_HEIGHT}
         enablePanDownToClose
         enableOverDrag={false}
         backdropComponent={renderBackdrop}
@@ -1219,7 +1236,7 @@ export default function ScanResultScreen() {
               style={{ maxHeight: SCREEN_HEIGHT * 0.55 }}
               contentContainerStyle={sheetStyles.scrollContent}
             >
-              {collections.map((col) => {
+              {collections.filter((c) => c.id !== coinInCollection?.id).map((col) => {
                 const isSelected = selectedCollectionId === col.id;
                 const coinImages = getCollectionCoins(col);
                 return (

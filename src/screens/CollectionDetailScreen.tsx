@@ -10,8 +10,11 @@ import {
   Alert,
   TextInput,
 } from 'react-native';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 import { Image } from 'expo-image';
-import { ChevronLeft, LayoutGrid, List, MoreHorizontal, MoreVertical, Pencil, Trash2, FolderPlus, X } from 'lucide-react-native';
+import { ChevronLeft, LayoutGrid, List, MoreHorizontal, MoreVertical, Pencil, Trash2, FolderPlus, X, Plus } from 'lucide-react-native';
+import Toast from 'react-native-toast-message';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -226,15 +229,18 @@ export default function CollectionDetailScreen() {
   const [selectedCoin, setSelectedCoin] = useState<CollectionCoinRow | null>(null);
   const [allCollections, setAllCollections] = useState<CollectionRow[]>([]);
   const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(null);
+  const [newCollectionName, setNewCollectionName] = useState('');
+  const [creatingCollection, setCreatingCollection] = useState(false);
 
   const moreSheetRef = useRef<BottomSheet>(null);
   const editSheetRef = useRef<BottomSheet>(null);
   const itemActionSheetRef = useRef<BottomSheet>(null);
   const itemAddToSheetRef = useRef<BottomSheet>(null);
+  const newCollectionSheetRef = useRef<BottomSheet>(null);
   const moreSnapPoints = useMemo(() => [180], []);
   const editSnapPoints = useMemo(() => [260], []);
   const itemActionSnapPoints = useMemo(() => [160], []);
-  const itemAddToSnapPoints = useMemo(() => ['55%'], []);
+  const newCollectionSnapPoints = useMemo(() => [280], []);
 
   // For local collection, use live generalCoinIds from store
   const coinIds = isLocalCollection ? generalCoinIds : (collection?.coin_ids ?? []);
@@ -297,12 +303,42 @@ export default function CollectionDetailScreen() {
     return () => { cancelled = true; };
   }, [collection?.id, coinIds.join(','), isLocalCollection, localCoins, generalCoinIds]);
 
+  const [allCoinsMap, setAllCoinsMap] = useState<Record<number, { id: number; front_image_url: string | null; back_image_url: string | null }>>({});
+
   useEffect(() => {
     const userId = collection?.user_id;
     if (!userId) return;
     supabase.from('collections').select('*').eq('user_id', userId).order('created_at', { ascending: false })
       .then(({ data }) => { if (data) setAllCollections(data as CollectionRow[]); });
   }, [collection?.user_id]);
+
+  useEffect(() => {
+    const allIds = new Set<number>();
+    allCollections.forEach((c) => (c.coin_ids ?? []).forEach((id) => allIds.add(id)));
+    const idsArr = Array.from(allIds);
+    if (idsArr.length === 0) {
+      setAllCoinsMap({});
+      return;
+    }
+    supabase
+      .from('coins')
+      .select('id, front_image_url, back_image_url')
+      .in('id', idsArr)
+      .then(({ data }) => {
+        if (data) {
+          const map: Record<number, { id: number; front_image_url: string | null; back_image_url: string | null }> = {};
+          data.forEach((c) => { map[c.id] = c; });
+          setAllCoinsMap(map);
+        }
+      });
+  }, [allCollections]);
+
+  const getCollectionCoins = (col: CollectionRow) => {
+    return (col.coin_ids ?? [])
+      .slice(-4)
+      .map((id) => allCoinsMap[id])
+      .filter(Boolean);
+  };
 
   const handleItemDotsPress = (coin: CollectionCoinRow) => {
     triggerSelection();
@@ -356,6 +392,43 @@ export default function CollectionDetailScreen() {
     setSelectedCollectionId(null);
     setSelectedCoin(null);
     Alert.alert('Moved', `Coin moved to "${col.name}"`);
+    navigation.goBack();
+  };
+
+  const openNewCollectionSheet = () => {
+    triggerSelection();
+    itemAddToSheetRef.current?.close();
+    setNewCollectionName('');
+    setTimeout(() => newCollectionSheetRef.current?.expand(), 200);
+  };
+
+  const handleCreateCollection = async () => {
+    const name = newCollectionName.trim();
+    if (!name || !session?.user?.id || !selectedCoin || !collection) return;
+    setCreatingCollection(true);
+
+    // Create new collection with the selected coin
+    const { data: newCol, error } = await supabase
+      .from('collections')
+      .insert({ user_id: session.user.id, name, coin_ids: [selectedCoin.id] })
+      .select()
+      .single();
+
+    if (error) {
+      setCreatingCollection(false);
+      Alert.alert('Error', error.message);
+      return;
+    }
+
+    // Remove coin from current collection
+    const oldIds = (collection.coin_ids || []).filter((id) => id !== selectedCoin.id);
+    await supabase.from('collections').update({ coin_ids: oldIds, updated_at: new Date().toISOString() }).eq('id', collection.id);
+
+    setCreatingCollection(false);
+    newCollectionSheetRef.current?.close();
+    setNewCollectionName('');
+    setSelectedCoin(null);
+    Toast.show({ type: 'success', text1: `Coin moved to "${name}"` });
     navigation.goBack();
   };
 
@@ -599,43 +672,163 @@ export default function CollectionDetailScreen() {
       <BottomSheet
         ref={itemAddToSheetRef}
         index={-1}
-        snapPoints={itemAddToSnapPoints}
+        enableDynamicSizing
+        snapPoints={[320]}
+        maxDynamicContentSize={SCREEN_HEIGHT}
         enablePanDownToClose
+        enableOverDrag={false}
         backdropComponent={renderBackdrop}
-        backgroundStyle={{ backgroundColor: colors.surface.onBgBase }}
-        handleIndicatorStyle={{ backgroundColor: colors.border.border4, width: 36, height: 4, borderRadius: 2 }}
+        backgroundStyle={{ backgroundColor: colors.surface.onBgBase, borderTopLeftRadius: 28, borderTopRightRadius: 28}}
+        handleIndicatorStyle={{ backgroundColor: colors.border.border3, width: 40 }}
       >
-        <BottomSheetView style={sheetStyles.addToContent}>
+        <BottomSheetView>
           <View style={sheetStyles.addToHeader}>
             <Text style={[sheetStyles.addToTitle, { color: colors.text.textBase }]}>Change collection</Text>
             <TouchableOpacity onPress={() => itemAddToSheetRef.current?.close()}>
-              <X size={24} color={colors.text.textAlt} />
+              <X size={24} color={colors.text.textBase} />
             </TouchableOpacity>
           </View>
-          <BottomSheetScrollView style={{ flex: 1 }}>
+          <View style={[sheetStyles.divider, { backgroundColor: colors.border.border3 }]} />
+          <BottomSheetScrollView
+            style={{ maxHeight: SCREEN_HEIGHT * 0.55 }}
+            contentContainerStyle={sheetStyles.scrollContent}
+          >
             {allCollections.filter((c) => c.id !== collection?.id).map((col) => {
               const isSelected = selectedCollectionId === col.id;
+              const coinImages = getCollectionCoins(col);
               return (
                 <TouchableOpacity
                   key={col.id}
-                  style={[sheetStyles.collectionRow, { borderColor: isSelected ? colors.text.textBrand : colors.border.border3 }, isSelected && { borderWidth: 2 }]}
+                  style={[
+                    sheetStyles.collectionRow,
+                    {
+                      borderColor: isSelected ? colors.text.textBase : colors.border.border3,
+                      backgroundColor: colors.surface.onBgBase,
+                    },
+                    isSelected && { borderWidth: 2 },
+                  ]}
                   onPress={() => { triggerSelection(); setSelectedCollectionId(col.id); }}
                   activeOpacity={0.7}
                 >
-                  <Text style={[sheetStyles.collectionName, { color: colors.text.textBase }]}>{col.name}</Text>
-                  <Text style={[sheetStyles.collectionCount, { color: colors.text.textTertiary }]}>{(col.coin_ids || []).length} items</Text>
+                  <View>
+                    <Text style={[sheetStyles.collectionName, { color: colors.text.textBase }]}>{col.name}</Text>
+                    <Text style={[sheetStyles.collectionCount, { color: colors.text.textTertiary }]}>{(col.coin_ids || []).length} items</Text>
+                  </View>
+                  <View style={sheetStyles.collectionCoins}>
+                    {(() => {
+                      const placeholder = (key: string, ml: boolean) => (
+                        <View
+                          key={key}
+                          style={[
+                            sheetStyles.collectionCoinImg,
+                            {
+                              marginLeft: ml ? -12 : 0,
+                              borderColor: colors.surface.onBgBase,
+                              backgroundColor: colors.border.border3,
+                            },
+                          ]}
+                        />
+                      );
+
+                      if (coinImages.length === 0) {
+                        return [placeholder('p0', false), placeholder('p1', true), placeholder('p2', true), placeholder('p3', true)];
+                      }
+
+                      const els: React.ReactNode[] = [];
+                      const last2 = coinImages.slice(-2);
+                      last2.forEach((c) => {
+                        const ml = els.length > 0;
+                        if (c.front_image_url) {
+                          els.push(
+                            <Image key={`${c.id}-f`} source={{ uri: c.front_image_url }} style={[sheetStyles.collectionCoinImg, { marginLeft: ml ? -12 : 0, borderColor: colors.surface.onBgBase }]} cachePolicy="disk" />
+                          );
+                        } else {
+                          els.push(placeholder(`${c.id}-fp`, ml));
+                        }
+                        if (c.back_image_url) {
+                          els.push(
+                            <Image key={`${c.id}-b`} source={{ uri: c.back_image_url }} style={[sheetStyles.collectionCoinImg, { marginLeft: -12, borderColor: colors.surface.onBgBase }]} cachePolicy="disk" />
+                          );
+                        } else {
+                          els.push(placeholder(`${c.id}-bp`, true));
+                        }
+                      });
+                      while (els.length < 4) {
+                        els.push(placeholder(`p${els.length}`, els.length > 0));
+                      }
+                      return els.slice(0, 4);
+                    })()}
+                  </View>
                 </TouchableOpacity>
               );
             })}
+            <TouchableOpacity
+              style={[
+                sheetStyles.newFolderRow,
+                { borderColor: colors.border.border3, backgroundColor: colors.surface.onBgBase },
+              ]}
+              onPress={openNewCollectionSheet}
+            >
+              <View>
+                <Text style={[sheetStyles.collectionName, { color: colors.text.textBase }]}>New Folder</Text>
+                <Text style={[sheetStyles.collectionCount, { color: colors.text.textTertiary }]}>Tap to create new</Text>
+              </View>
+              <View style={[sheetStyles.plusCircle, { backgroundColor: colors.border.border3 }]}>
+                <Plus size={22} color={colors.text.textBase} />
+              </View>
+            </TouchableOpacity>
           </BottomSheetScrollView>
+          <View style={[sheetStyles.divider, { backgroundColor: colors.border.border3 }]} />
           <TouchableOpacity
-            style={[sheetStyles.confirmBtn, { backgroundColor: selectedCollectionId ? colors.background.bgInverse : colors.surface.surfaceElevated }]}
+            style={[sheetStyles.confirmBtn, { backgroundColor: selectedCollectionId ? colors.background.bgInverse : colors.border.border3, marginBottom: 16 }]}
             onPress={handleItemConfirmAddTo}
             disabled={!selectedCollectionId}
             activeOpacity={0.8}
           >
             <Text style={[sheetStyles.confirmBtnText, { color: selectedCollectionId ? colors.text.textInverse : colors.text.textTertiary }]}>Confirm</Text>
           </TouchableOpacity>
+        </BottomSheetView>
+      </BottomSheet>
+
+      {/* New Collection Bottom Sheet */}
+      <BottomSheet
+        ref={newCollectionSheetRef}
+        index={-1}
+        snapPoints={newCollectionSnapPoints}
+        enablePanDownToClose
+        backdropComponent={renderBackdrop}
+        backgroundStyle={{ backgroundColor: colors.surface.onBgBase }}
+        handleIndicatorStyle={{ backgroundColor: colors.border.border3, width: 40 }}
+        keyboardBehavior="extend"
+        keyboardBlurBehavior="restore"
+        android_keyboardInputMode="adjustResize"
+      >
+        <BottomSheetView style={sheetStyles.newCollectionContainer}>
+          <View style={sheetStyles.newCollectionBody}>
+            <Text style={[sheetStyles.addToTitle, { color: colors.text.textBase, marginBottom: 16 }]}>New Collection</Text>
+            <Text style={[sheetStyles.inputLabel, { color: colors.text.textBase }]}>Collection name</Text>
+            <BottomSheetTextInput
+              style={[sheetStyles.input, { backgroundColor: colors.surface.onBgBase, color: colors.text.textBase, borderColor: colors.border.border3 }]}
+              value={newCollectionName}
+              onChangeText={setNewCollectionName}
+              placeholder="Ancient collection"
+              placeholderTextColor={colors.text.textTertiary}
+            />
+          </View>
+          <View style={sheetStyles.newCollectionFooter}>
+            <TouchableOpacity
+              style={[sheetStyles.confirmBtn, { backgroundColor: newCollectionName.trim() ? colors.background.bgInverse : colors.border.border3, marginBottom: 16 }]}
+              onPress={handleCreateCollection}
+              disabled={!newCollectionName.trim() || creatingCollection}
+              activeOpacity={0.8}
+            >
+              {creatingCollection ? (
+                <ActivityIndicator size="small" color={colors.text.textInverse} />
+              ) : (
+                <Text style={[sheetStyles.confirmBtnText, { color: newCollectionName.trim() ? colors.text.textInverse : colors.text.textTertiary }]}>Create & Move</Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </BottomSheetView>
       </BottomSheet>
     </View>
@@ -858,44 +1051,105 @@ const sheetStyles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
-  addToContent: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
   addToHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    paddingHorizontal: 24,
+    paddingTop: 4,
+    paddingBottom: 18,
   },
   addToTitle: {
     fontSize: 20,
     fontWeight: '700',
   },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    width: '100%',
+  },
+  scrollContent: {
+    paddingHorizontal: 24,
+    paddingTop: 18,
+    paddingBottom: 20,
+  },
   collectionRow: {
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 0,
+    paddingHorizontal: 18,
+    borderRadius: 20,
     borderWidth: 1,
-    marginBottom: 10,
+    marginBottom: 14,
+    minHeight: 84,
   },
   collectionName: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '500',
   },
   collectionCount: {
-    fontSize: 13,
-    marginTop: 2,
+    fontSize: 15,
+    marginTop: 4,
+  },
+  collectionCoins: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  collectionCoinImg: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
   },
   confirmBtn: {
-    borderRadius: 14,
+    borderRadius: 18,
+    width: '90%',
     paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 16,
-    marginBottom: 20,
+    marginHorizontal: 24,
+    marginTop: 18,
   },
   confirmBtnText: {
     fontSize: 17,
     fontWeight: '700',
+  },
+  emptyState: {
+    paddingVertical: 40,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  newFolderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 0,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    marginBottom: 14,
+    minHeight: 84,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+  },
+  plusCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  newCollectionContainer: {
+    flex: 1,
+  },
+  newCollectionBody: {
+    paddingHorizontal: 24,
+    paddingTop: 4,
+  },
+  newCollectionFooter: {
+    marginTop: 'auto',
   },
 });

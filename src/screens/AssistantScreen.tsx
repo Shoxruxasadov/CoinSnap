@@ -13,13 +13,18 @@ import {
   Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ChevronLeft, X, Send, ImageIcon } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
+import Purchases from 'react-native-purchases';
 import { useThemeColors } from '../theme/useThemeColors';
 import { useAssistantStore, AssistantMessage } from '../stores/useAssistantStore';
 import { chatWithGemini } from '../lib/gemini';
 import { triggerSelection } from '../lib/haptics';
+import type { MainStackParamList } from '../navigation/MainStack';
+
+type Nav = NativeStackNavigationProp<MainStackParamList>;
 
 const SUGGESTIONS = [
   'How can I identify a rare coin?',
@@ -56,7 +61,7 @@ type PendingImage = {
 
 export default function AssistantScreen() {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
+  const navigation = useNavigation<Nav>();
   const colors = useThemeColors();
   const messages = useAssistantStore((s) => s.messages);
   const addMessage = useAssistantStore((s) => s.addMessage);
@@ -65,10 +70,22 @@ export default function AssistantScreen() {
   const [loading, setLoading] = useState(false);
   const [pendingImage, setPendingImage] = useState<PendingImage>(null);
   const [imageCaption, setImageCaption] = useState('');
+  const [isPro, setIsPro] = useState(false);
 
   const userMessageCount = messages.filter((m) => m.role === 'user').length;
   const hasUserSentAny = userMessageCount > 0;
   const showSuggestions = !hasUserSentAny;
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const info = await Purchases.getCustomerInfo();
+        setIsPro(Object.keys(info.entitlements.active).length > 0);
+      } catch {
+        setIsPro(false);
+      }
+    })();
+  }, []);
   const prevMessageCountRef = useRef(0);
 
   const styles = useMemo(
@@ -263,6 +280,11 @@ export default function AssistantScreen() {
 
   const sendText = useCallback(
     async (text: string) => {
+      if (userMessageCount >= 1 && !isPro) {
+        navigation.navigate('Pro');
+        return;
+      }
+
       const trimmed = (text || '').trim();
       const caption = (imageCaption || '').trim();
       if (!trimmed && !pendingImage) return;
@@ -331,7 +353,7 @@ export default function AssistantScreen() {
         setLoading(false);
       }
     },
-    [messages, addMessage, pendingImage, imageCaption]
+    [messages, addMessage, pendingImage, imageCaption, userMessageCount, isPro, navigation]
   );
 
   const onSend = () => {
@@ -348,6 +370,11 @@ export default function AssistantScreen() {
   };
 
   const openGallery = async () => {
+    if (userMessageCount >= 1 && !isPro) {
+      navigation.navigate('Pro');
+      return;
+    }
+
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {

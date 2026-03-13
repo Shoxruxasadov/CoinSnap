@@ -21,6 +21,7 @@ import { useNavigation, useFocusEffect, CommonActions } from '@react-navigation/
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import Toast from 'react-native-toast-message';
+import Purchases from 'react-native-purchases';
 import { useThemeColors } from '../../theme/useThemeColors';
 import { supabase } from '../../lib/supabase';
 import { useSupabaseSession } from '../../lib/useSupabaseSession';
@@ -174,7 +175,19 @@ export default function CollectionsScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [collectionName, setCollectionName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [isPro, setIsPro] = useState(false);
   const isGrid = viewMode === 'grid';
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const info = await Purchases.getCustomerInfo();
+        setIsPro(Object.keys(info.entitlements.active).length > 0);
+      } catch {
+        setIsPro(false);
+      }
+    })();
+  }, []);
 
   const openCollectionDetail = (c: CollectionRow) => {
     stackNav?.navigate('CollectionDetail', { collection: c });
@@ -308,6 +321,10 @@ export default function CollectionsScreen() {
   };
 
   const openModal = () => {
+    if (!isPro) {
+      stackNav?.navigate('Pro');
+      return;
+    }
     if (!session?.user?.id) {
       navigation.dispatch(CommonActions.navigate({ name: 'GetStarted' }));
       return;

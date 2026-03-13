@@ -33,6 +33,7 @@ import PagerView from 'react-native-pager-view';
 import { triggerSelection, triggerImpact } from '../lib/haptics';
 import { analyzeCoinInApp } from '../lib/analyzeCoin';
 import { processCoinImage } from '../lib/processCoinImage';
+import Purchases from 'react-native-purchases';
 import CoinObserveSvg from '../../assets/guide/coin-observe.svg';
 
 type Nav = NativeStackNavigationProp<MainStackParamList>;
@@ -142,16 +143,42 @@ export default function ScannerScreen() {
   const cameraRef = useRef<CameraView>(null);
 
   const [permission, requestPermission] = useCameraPermissions();
-  const [step, setStep] = useState<1 | 2>(1);
+  const [scanMode, setScanMode] = useState<'observe' | 'reverse'>('observe');
   const [flashOn, setFlashOn] = useState(false);
   const [frontImage, setFrontImage] = useState<string | null>(null);
   const [backImage, setBackImage] = useState<string | null>(null);
+  const [processedFrontImage, setProcessedFrontImage] = useState<string | null>(null);
+  const [processedBackImage, setProcessedBackImage] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [analysisStepIndex, setAnalysisStepIndex] = useState(0);
   const [showSnapGuide, setShowSnapGuide] = useState(false);
   const [guidePageIndex, setGuidePageIndex] = useState(0);
   const guidePagerRef = useRef<PagerView>(null);
   const [lastGalleryPhoto, setLastGalleryPhoto] = useState<string | null>(null);
+  const [isPro, setIsPro] = useState(false);
+  const [scanCount, setScanCount] = useState(0);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const info = await Purchases.getCustomerInfo();
+        setIsPro(Object.keys(info.entitlements.active).length > 0);
+      } catch {
+        setIsPro(false);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      const { count } = await supabase
+        .from('coins')
+        .select('*', { count: 'exact', head: true })
+        .eq('scanned_by_user_id', userId);
+      setScanCount(count ?? 0);
+    })();
+  }, [userId]);
 
   useEffect(() => {
     if (showSnapGuide) {
@@ -299,7 +326,7 @@ export default function ScannerScreen() {
     navigation.goBack();
   };
 
-  const processImage = async (uri: string, fromCamera: boolean = false): Promise<string> => {
+  const processImage = async (uri: string): Promise<string> => {
     try {
       const { width: imgW, height: imgH } = await new Promise<{ width: number; height: number }>(
         (resolve, reject) => {
@@ -307,68 +334,36 @@ export default function ScannerScreen() {
         },
       );
 
-      const actions: ImageManipulator.Action[] = [];
+      // Camera "cover" mode: scale factor
+      const scaleX = imgW / SCREEN_WIDTH;
+      const scaleY = imgH / SCREEN_HEIGHT;
+      const scale = Math.min(scaleX, scaleY);
 
-      if (fromCamera) {
-        // Swap dimensions if raw image is landscape but device is portrait (EXIF rotation)
-        let photoW = imgW;
-        let photoH = imgH;
-        if (imgW > imgH && SCREEN_HEIGHT > SCREEN_WIDTH) {
-          photoW = imgH;
-          photoH = imgW;
-        }
+      // Offset (qancha qismi ko'rinmaydi - centered)
+      const offsetX = (imgW - SCREEN_WIDTH * scale) / 2;
+      const offsetY = (imgH - SCREEN_HEIGHT * scale) / 2;
 
-        // CameraView aspect-fill: image fills screen, excess is clipped equally on both sides
-        // Scale factor: how many photo pixels = 1 screen pixel
-        const scaleX = photoW / SCREEN_WIDTH;
-        const scaleY = photoH / SCREEN_HEIGHT;
-        const scale = Math.min(scaleX, scaleY);
+      // Circle ekrandagi pozitsiyasi
+      const circleLeft = (SCREEN_WIDTH - CIRCLE_SIZE) / 2;
+      const circleTop = (SCREEN_HEIGHT - CIRCLE_SIZE) / 2.2;
 
-        // Photo area that maps to visible screen
-        const visibleW = SCREEN_WIDTH * scale;
-        const visibleH = SCREEN_HEIGHT * scale;
+      // Screen koordinatalaridan image koordinatalariga
+      const cropX = Math.round(circleLeft * scale + offsetX);
+      const cropY = Math.round(circleTop * scale + offsetY);
+      const cropSize = Math.round(CIRCLE_SIZE * scale);
 
-        // Offset from photo origin to visible area origin (centered)
-        const offsetX = (photoW - visibleW) / 2;
-        const offsetY = (photoH - visibleH) / 2;
+      // Chegaralarni tekshirish
+      const safeX = Math.max(0, Math.min(cropX, imgW - cropSize));
+      const safeY = Math.max(0, Math.min(cropY, imgH - cropSize));
 
-        // Circle center and radius in photo coordinates
-        const cx = offsetX + (SCREEN_WIDTH / 2) * scale;
-        const cy = offsetY + CIRCLE_CENTER_Y * scale;
-        const r = (CIRCLE_SIZE / 2) * scale;
-
-        // Crop square around circle
-        const cropSize = Math.round(r * 2);
-        const originX = Math.max(0, Math.min(Math.round(cx - r), photoW - cropSize));
-        const originY = Math.max(0, Math.min(Math.round(cy - r), photoH - cropSize));
-
-        console.log('Crop:', {
-          screen: { w: SCREEN_WIDTH, h: SCREEN_HEIGHT },
-          circleScreen: { cy: CIRCLE_CENTER_Y, size: CIRCLE_SIZE },
-          raw: { imgW, imgH },
-          photo: { photoW, photoH },
-          scale,
-          visible: { visibleW, visibleH },
-          offset: { offsetX, offsetY },
-          crop: { cx, cy, r, originX, originY, cropSize },
-        });
-
-        actions.push({ crop: { originX, originY, width: cropSize, height: cropSize } });
-        actions.push({ resize: { width: 1000 } });
-      } else {
-        const maxSize = 1200;
-        if (imgW > maxSize || imgH > maxSize) {
-          const s = Math.min(maxSize / imgW, maxSize / imgH);
-          actions.push({ resize: { width: Math.round(imgW * s), height: Math.round(imgH * s) } });
-        }
-      }
-
-      if (actions.length === 0) return uri;
-
-      const result = await ImageManipulator.manipulateAsync(uri, actions, {
-        compress: 0.92,
-        format: ImageManipulator.SaveFormat.JPEG,
-      });
+      const result = await ImageManipulator.manipulateAsync(
+        uri,
+        [
+          { crop: { originX: safeX, originY: safeY, width: cropSize, height: cropSize } },
+          { resize: { width: 1024 } },
+        ],
+        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+      );
       return result.uri;
     } catch (err) {
       console.error('processImage error:', err);
@@ -404,6 +399,11 @@ export default function ScannerScreen() {
   };
 
   const handleCapture = async () => {
+    if (!frontImage && !backImage && scanCount >= 1 && !isPro) {
+      navigation.navigate('Pro');
+      return;
+    }
+
     if (!cameraRef.current) {
       console.error('Camera ref is null');
       Alert.alert('Error', 'Camera is not ready. Please try again.');
@@ -426,15 +426,23 @@ export default function ScannerScreen() {
       }
 
       console.log('Processing image...');
-      const processed = await processImage(photo.uri, true);
+      const processed = await processImage(photo.uri);
       console.log('Image processed:', processed);
 
-      if (step === 1) {
+      if (scanMode === 'observe') {
         setFrontImage(processed);
-        setStep(2);
+        if (backImage) {
+          startProcessing(processed, backImage);
+        } else {
+          setScanMode('reverse');
+        }
       } else {
         setBackImage(processed);
-        startProcessing(frontImage!, processed);
+        if (frontImage) {
+          startProcessing(frontImage, processed);
+        } else {
+          setScanMode('observe');
+        }
       }
     } catch (err) {
       console.error('Capture error:', err);
@@ -443,6 +451,11 @@ export default function ScannerScreen() {
   };
 
   const handlePickFromGallery = async () => {
+    // if (!frontImage && !backImage && scanCount >= 1 && !isPro) {
+    //   navigation.navigate('Pro');
+    //   return;
+    // }
+
     triggerSelection();
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -483,9 +496,13 @@ export default function ScannerScreen() {
 
     const processed = await processImage(result.assets[0].uri);
     if (existingImageCount === 0) {
-      setFrontImage(processed);
-      setBackImage(null);
-      setStep(2);
+      if (scanMode === 'observe') {
+        setFrontImage(processed);
+        setScanMode('reverse');
+      } else {
+        setBackImage(processed);
+        setScanMode('observe');
+      }
       return;
     }
 
@@ -505,25 +522,79 @@ export default function ScannerScreen() {
   const handleRemoveFront = () => {
     triggerSelection();
     setFrontImage(null);
-    setStep(1);
+    setProcessedFrontImage(null);
+    setScanMode('observe');
     setBackImage(null);
+    setProcessedBackImage(null);
   };
 
   const handleRemoveBack = () => {
     triggerSelection();
     setBackImage(null);
-    setStep(2);
+    setProcessedBackImage(null);
+    setScanMode('reverse');
+  };
+
+  const removeBackgroundOnly = async (imageUri: string): Promise<string> => {
+    try {
+      const formData = new FormData();
+      formData.append('file', {
+        uri: imageUri,
+        type: 'image/png',
+        name: 'coin.png',
+      } as any);
+
+      const res = await fetch('http://46.202.191.37:8000/remove-bg', {
+        method: 'POST',
+        body: formData,
+        headers: { 'Accept': 'image/png' },
+      });
+
+      if (!res.ok) return imageUri;
+
+      const blob = await res.blob();
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          resolve(dataUrl.split(',')[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+
+      const outputPath = `${FileSystem.cacheDirectory}bg_preview_${Date.now()}.png`;
+      await FileSystem.writeAsStringAsync(outputPath, base64, { encoding: 'base64' });
+      return outputPath;
+    } catch {
+      return imageUri;
+    }
   };
 
   const startProcessing = async (front: string, back: string) => {
     setProcessing(true);
+    setProcessedFrontImage(null);
+    setProcessedBackImage(null);
     setAnalysisStepIndex(0); // 20% – Removing background
 
     try {
+      // Remove background and update UI immediately as each completes
+      const frontBgRemovePromise = removeBackgroundOnly(front).then(uri => {
+        setProcessedFrontImage(uri);
+        return uri;
+      });
+      const backBgRemovePromise = removeBackgroundOnly(back).then(uri => {
+        setProcessedBackImage(uri);
+        return uri;
+      });
+
       const [processedFront, processedBack] = await Promise.all([
         processCoinImage(front).then(r => r.processedUri).catch(() => front),
         processCoinImage(back).then(r => r.processedUri).catch(() => back),
       ]);
+
+      // Wait for bg preview to also complete (in case it's still running)
+      await Promise.all([frontBgRemovePromise, backBgRemovePromise]).catch(() => {});
 
       setAnalysisStepIndex(1); // 45% – Uploading images
 
@@ -583,7 +654,9 @@ export default function ScannerScreen() {
 
       setFrontImage(null);
       setBackImage(null);
-      setStep(1);
+      setProcessedFrontImage(null);
+      setProcessedBackImage(null);
+      setScanMode('observe');
     }
   };
 
@@ -645,7 +718,7 @@ export default function ScannerScreen() {
             cy={CIRCLE_CENTER_Y}
             r={CIRCLE_SIZE / 2 - 4}
             fill="none"
-            stroke={step === 1 ? '#4CAF50' : '#FFFFFF'}
+            stroke={scanMode === 'observe' ? '#4CAF50' : '#FFFFFF'}
             strokeWidth={3}
             strokeDasharray="12 8"
           />
@@ -658,10 +731,14 @@ export default function ScannerScreen() {
           <X size={24} color="#fff" />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.premiumPill} activeOpacity={0.8} onPress={() => navigation.navigate('Pro')}>
-          <Crown size={16} color="#1a1a1a" fill="#1a1a1a" />
-          <Text style={styles.premiumText}>Get unlimited scans</Text>
-        </TouchableOpacity>
+        {!isPro ? (
+          <TouchableOpacity style={styles.premiumPill} activeOpacity={0.8} onPress={() => navigation.navigate('Pro')}>
+            <Crown size={16} color="#1a1a1a" fill="#1a1a1a" />
+            <Text style={styles.premiumText}>Get unlimited scans</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={{ flex: 1 }} />
+        )}
 
         <TouchableOpacity
           style={styles.headerBtn}
@@ -681,9 +758,9 @@ export default function ScannerScreen() {
       {/* Step instruction card */}
       <View style={styles.stepCardContainer}>
         <View style={styles.stepCard}>
-          <Text style={styles.stepTitle}>STEP {step}</Text>
+          <Text style={styles.stepTitle}>{scanMode === 'observe' ? 'OBSERVE' : 'REVERSE'}</Text>
           <Text style={styles.stepDesc}>
-            {step === 1
+            {scanMode === 'observe'
               ? 'Take a position of observe side to the center'
               : 'Take a position of reverse side to the center'}
           </Text>
@@ -693,7 +770,11 @@ export default function ScannerScreen() {
       {/* Thumbnails - always show both slots */}
       <View style={styles.thumbnailsContainer}>
         {/* Slot 1: Observe */}
-        <View style={styles.thumbnailSlot}>
+        <TouchableOpacity
+          style={styles.thumbnailSlot}
+          onPress={() => { if (!frontImage) { triggerSelection(); setScanMode('observe'); } }}
+          activeOpacity={frontImage ? 1 : 0.7}
+        >
           {frontImage ? (
             <View style={styles.thumbnailWrap}>
               <Image source={{ uri: frontImage }} style={styles.thumbnail} />
@@ -702,15 +783,19 @@ export default function ScannerScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={[styles.thumbnailPlaceholder, step === 1 && styles.thumbnailPlaceholderActive]}>
+            <View style={[styles.thumbnailPlaceholder, scanMode === 'observe' && styles.thumbnailPlaceholderActive]}>
               <CoinObserveSvg width={28} height={24} style={{marginTop: 2}} />
             </View>
           )}
           <Text style={styles.thumbnailLabel}>Observe</Text>
-        </View>
+        </TouchableOpacity>
 
         {/* Slot 2: Reverse */}
-        <View style={styles.thumbnailSlot}>
+        <TouchableOpacity
+          style={styles.thumbnailSlot}
+          onPress={() => { if (!backImage) { triggerSelection(); setScanMode('reverse'); } }}
+          activeOpacity={backImage ? 1 : 0.7}
+        >
           {backImage ? (
             <View style={styles.thumbnailWrap}>
               <Image source={{ uri: backImage }} style={styles.thumbnail} />
@@ -719,12 +804,12 @@ export default function ScannerScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={[styles.thumbnailPlaceholder, step === 2 && styles.thumbnailPlaceholderActive]}>
+            <View style={[styles.thumbnailPlaceholder, scanMode === 'reverse' && styles.thumbnailPlaceholderActive]}>
               <Text style={[styles.thumbnailPlaceholderText, {fontWeight: '900'}]}>1</Text>
             </View>
           )}
           <Text style={styles.thumbnailLabel}>Reverse</Text>
-        </View>
+        </TouchableOpacity>
       </View>
 
       {/* Bottom controls */}
@@ -781,13 +866,13 @@ export default function ScannerScreen() {
               {frontImage && (
                 <View style={styles.processingImageWrap}>
                   <Animated.View style={[styles.dashedBorder, { transform: [{ rotate: dashedSpinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }]} />
-                  <Image source={{ uri: frontImage }} style={styles.processingImage} />
+                  <Image source={{ uri: processedFrontImage || frontImage }} style={styles.processingImage} />
                 </View>
               )}
               {backImage && (
                 <View style={styles.processingImageWrap}>
                   <Animated.View style={[styles.dashedBorder, { transform: [{ rotate: dashedSpinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }]} />
-                  <Image source={{ uri: backImage }} style={styles.processingImage} />
+                  <Image source={{ uri: processedBackImage || backImage }} style={styles.processingImage} />
                 </View>
               )}
             </View>
@@ -851,9 +936,15 @@ export default function ScannerScreen() {
             </View>
             <TouchableOpacity
               style={styles.snapGuideBtn}
-              onPress={() => setShowSnapGuide(false)}
+              onPress={() => {
+                if (guidePageIndex < 2) {
+                  guidePagerRef.current?.setPage(guidePageIndex + 1);
+                } else {
+                  setShowSnapGuide(false);
+                }
+              }}
             >
-              <Text style={styles.snapGuideBtnText}>Understand</Text>
+              <Text style={styles.snapGuideBtnText}>{guidePageIndex < 2 ? 'Next' : 'Understand'}</Text>
             </TouchableOpacity>
           </View>
         </View>
