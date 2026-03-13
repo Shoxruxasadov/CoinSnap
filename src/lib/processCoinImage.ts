@@ -1,6 +1,7 @@
 import { Image } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
+import { encode } from 'base64-arraybuffer';
 import { supabase } from './supabase';
 
 const TARGET_SIZE = 512;
@@ -12,7 +13,7 @@ async function getGeminiKey(): Promise<string> {
   const { data, error } = await supabase.functions.invoke('get-gemini-key');
   if (error || !data?.key) throw new Error('Failed to get Gemini API key');
   cachedGeminiKey = data.key;
-  return cachedGeminiKey;
+  return data.key;
 }
 
 function getImageSize(uri: string): Promise<{ width: number; height: number }> {
@@ -107,62 +108,18 @@ export async function processCoinImage(imageUri: string): Promise<{
   processedUri: string;
   processedBase64: string;
 }> {
-  const originalBase64 = await FileSystem.readAsStringAsync(imageUri, {
-    encoding: 'base64',
-  });
+  console.log('processCoinImage: Starting...');
 
-  const { width: imgW, height: imgH } = await getImageSize(imageUri);
-  console.log('processCoinImage: image size', imgW, 'x', imgH);
-
-  // Detect coin position using Gemini
-  const coinBounds = await detectCoinBounds(originalBase64, imgW, imgH);
-
-  const actions: ImageManipulator.Action[] = [];
-
-  if (coinBounds) {
-    console.log('Cropping to detected coin:', coinBounds);
-    actions.push({
-      crop: {
-        originX: coinBounds.x,
-        originY: coinBounds.y,
-        width: coinBounds.size,
-        height: coinBounds.size,
-      },
-    });
-  } else {
-    console.log('Coin not detected, using center crop');
-    if (imgW !== imgH) {
-      const side = Math.min(imgW, imgH);
-      const originX = Math.round((imgW - side) / 2);
-      const originY = Math.round((imgH - side) / 2);
-      actions.push({ crop: { originX, originY, width: side, height: side } });
-    }
-  }
-
-  actions.push({ resize: { width: TARGET_SIZE, height: TARGET_SIZE } });
-
-  const result = await ImageManipulator.manipulateAsync(
-    imageUri,
-    actions,
-    { compress: 0.92, format: ImageManipulator.SaveFormat.PNG },
-  );
-
-  const bgRemovedUri = await removeBackground(result.uri);
-
-  let finalUri = bgRemovedUri || result.uri;
-
-  if (bgRemovedUri) {
-    const compressed = await ImageManipulator.manipulateAsync(
-      bgRemovedUri,
-      [{ resize: { width: TARGET_SIZE, height: TARGET_SIZE } }],
-      { compress: 0.85, format: ImageManipulator.SaveFormat.PNG },
-    );
-    finalUri = compressed.uri;
-  }
+  // Faqat background remove qilamiz, boshqa hech narsa
+  const bgRemovedUri = await removeBackground(imageUri);
+  
+  const finalUri = bgRemovedUri || imageUri;
 
   const finalBase64 = await FileSystem.readAsStringAsync(finalUri, {
     encoding: 'base64',
   });
+
+  console.log('processCoinImage: Done');
 
   return {
     processedUri: finalUri,
@@ -201,21 +158,25 @@ async function removeBackground(imageUri: string): Promise<string | null> {
       return null;
     }
 
-    const blob = await res.blob();
-    const reader = new FileReader();
-
-    const resultBase64 = await new Promise<string>((resolve, reject) => {
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-        const base64Data = dataUrl.split(',')[1];
-        resolve(base64Data);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
+    // ArrayBuffer olish va base64 ga convert qilish
+    const arrayBuffer = await res.arrayBuffer();
+    console.log('ArrayBuffer size:', arrayBuffer.byteLength);
+    
+    // PNG signature tekshirish (89 50 4E 47 = PNG)
+    const bytes = new Uint8Array(arrayBuffer);
+    const isPNG = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47;
+    console.log('Is PNG:', isPNG, 'First 4 bytes:', bytes[0], bytes[1], bytes[2], bytes[3]);
+    
+    const resultBase64 = encode(arrayBuffer);
+    console.log('Base64 length:', resultBase64.length);
 
     const outputPath = `${FileSystem.cacheDirectory}bg_removed_${Date.now()}.png`;
     await FileSystem.writeAsStringAsync(outputPath, resultBase64, { encoding: 'base64' });
+    
+    // Verify file exists
+    const written = await FileSystem.getInfoAsync(outputPath);
+    console.log('File written:', written.exists, 'size:', (written as any).size);
+    
     console.log('BG removed successfully via rembg API');
     return outputPath;
   } catch (e) {

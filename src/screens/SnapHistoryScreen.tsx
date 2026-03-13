@@ -95,7 +95,7 @@ function CoinRow({
     >
       <View style={[styles.coinImagesWrap, { backgroundColor: colors.surface.surface }]}>
         {hasFront && (
-          <View style={[styles.coinImageBack, { borderColor: colors.surface.surface }]}>
+          <View style={[styles.coinImageBack, { borderColor: colors.surface.surface, backgroundColor: colors.surface.surface }]}>
             <Image
               source={{ uri: item.front_image_url! }}
               style={styles.coinCircleImage}
@@ -106,7 +106,7 @@ function CoinRow({
           </View>
         )}
         {hasBack && (
-          <View style={[styles.coinImageFront, { borderColor: colors.surface.surface }]}>
+          <View style={[styles.coinImageFront, { borderColor: colors.surface.surface, backgroundColor: colors.surface.surface }]}>
             <Image
               source={{ uri: item.back_image_url! }}
               style={styles.coinCircleImage}

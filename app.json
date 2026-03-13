@@ -16,17 +16,26 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.webnum.coinsnap",
       "appleTeamId": "2J688D34T8",
-      "buildNumber": "25",
+      "buildNumber": "27",
       "usesAppleSignIn": true,
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSExceptionDomains": {
+            "46.202.191.37": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSIncludesSubdomains": true
+            }
+          }
+        }
       }
     },
     "android": {
       "icon": "./assets/icon.png",
       "predictiveBackGestureEnabled": false,
       "package": "com.webnum.coinsnap",
-      "versionCode": 25
+      "versionCode": 27
     },
     "web": {
       "favicon": "./assets/icon.png"

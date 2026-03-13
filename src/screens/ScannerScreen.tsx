@@ -327,48 +327,8 @@ export default function ScannerScreen() {
   };
 
   const processImage = async (uri: string): Promise<string> => {
-    try {
-      const { width: imgW, height: imgH } = await new Promise<{ width: number; height: number }>(
-        (resolve, reject) => {
-          Image.getSize(uri, (w, h) => resolve({ width: w, height: h }), reject);
-        },
-      );
-
-      // Camera "cover" mode: scale factor
-      const scaleX = imgW / SCREEN_WIDTH;
-      const scaleY = imgH / SCREEN_HEIGHT;
-      const scale = Math.min(scaleX, scaleY);
-
-      // Offset (qancha qismi ko'rinmaydi - centered)
-      const offsetX = (imgW - SCREEN_WIDTH * scale) / 2;
-      const offsetY = (imgH - SCREEN_HEIGHT * scale) / 2;
-
-      // Circle ekrandagi pozitsiyasi
-      const circleLeft = (SCREEN_WIDTH - CIRCLE_SIZE) / 2;
-      const circleTop = (SCREEN_HEIGHT - CIRCLE_SIZE) / 2.2;
-
-      // Screen koordinatalaridan image koordinatalariga
-      const cropX = Math.round(circleLeft * scale + offsetX);
-      const cropY = Math.round(circleTop * scale + offsetY);
-      const cropSize = Math.round(CIRCLE_SIZE * scale);
-
-      // Chegaralarni tekshirish
-      const safeX = Math.max(0, Math.min(cropX, imgW - cropSize));
-      const safeY = Math.max(0, Math.min(cropY, imgH - cropSize));
-
-      const result = await ImageManipulator.manipulateAsync(
-        uri,
-        [
-          { crop: { originX: safeX, originY: safeY, width: cropSize, height: cropSize } },
-          { resize: { width: 1024 } },
-        ],
-        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
-      );
-      return result.uri;
-    } catch (err) {
-      console.error('processImage error:', err);
-      return uri;
-    }
+    // Original rasmni qaytaramiz, API o'zi process qiladi
+    return uri;
   };
 
   const uploadImage = async (uri: string, side: string): Promise<string | null> => {
@@ -451,10 +411,10 @@ export default function ScannerScreen() {
   };
 
   const handlePickFromGallery = async () => {
-    if (!frontImage && !backImage && scanCount >= 1 && !isPro) {
-      navigation.navigate('Pro');
-      return;
-    }
+    // if (!frontImage && !backImage && scanCount >= 1 && !isPro) {
+    //   navigation.navigate('Pro');
+    //   return;
+    // }
 
     triggerSelection();
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -535,42 +495,6 @@ export default function ScannerScreen() {
     setScanMode('reverse');
   };
 
-  const removeBackgroundOnly = async (imageUri: string): Promise<string> => {
-    try {
-      const formData = new FormData();
-      formData.append('file', {
-        uri: imageUri,
-        type: 'image/png',
-        name: 'coin.png',
-      } as any);
-
-      const res = await fetch('http://46.202.191.37:8000/remove-bg', {
-        method: 'POST',
-        body: formData,
-        headers: { 'Accept': 'image/png' },
-      });
-
-      if (!res.ok) return imageUri;
-
-      const blob = await res.blob();
-      const reader = new FileReader();
-      const base64 = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => {
-          const dataUrl = reader.result as string;
-          resolve(dataUrl.split(',')[1]);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-
-      const outputPath = `${FileSystem.cacheDirectory}bg_preview_${Date.now()}.png`;
-      await FileSystem.writeAsStringAsync(outputPath, base64, { encoding: 'base64' });
-      return outputPath;
-    } catch {
-      return imageUri;
-    }
-  };
-
   const startProcessing = async (front: string, back: string) => {
     setProcessing(true);
     setProcessedFrontImage(null);
@@ -578,23 +502,17 @@ export default function ScannerScreen() {
     setAnalysisStepIndex(0); // 20% – Removing background
 
     try {
-      // Remove background and update UI immediately as each completes
-      const frontBgRemovePromise = removeBackgroundOnly(front).then(uri => {
-        setProcessedFrontImage(uri);
-        return uri;
-      });
-      const backBgRemovePromise = removeBackgroundOnly(back).then(uri => {
-        setProcessedBackImage(uri);
-        return uri;
-      });
-
+      // Background remove qilish va UI ni yangilash
       const [processedFront, processedBack] = await Promise.all([
-        processCoinImage(front).then(r => r.processedUri).catch(() => front),
-        processCoinImage(back).then(r => r.processedUri).catch(() => back),
+        processCoinImage(front).then(r => {
+          setProcessedFrontImage(r.processedUri);
+          return r.processedUri;
+        }).catch(() => front),
+        processCoinImage(back).then(r => {
+          setProcessedBackImage(r.processedUri);
+          return r.processedUri;
+        }).catch(() => back),
       ]);
-
-      // Wait for bg preview to also complete (in case it's still running)
-      await Promise.all([frontBgRemovePromise, backBgRemovePromise]).catch(() => {});
 
       setAnalysisStepIndex(1); // 45% – Uploading images
 

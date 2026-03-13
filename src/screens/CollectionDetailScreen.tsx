@@ -102,7 +102,7 @@ function CoinRowList({
     >
       <View style={[styles.coinImagesWrap, { backgroundColor: colors.surface.surface }]}>
         {hasFront && (
-          <View style={[styles.coinImageBack, { borderColor: colors.surface.surface }]}>
+          <View style={[styles.coinImageBack, { borderColor: colors.surface.surface, backgroundColor: colors.surface.surface }]}>
             <Image
               source={{ uri: item.front_image_url! }}
               style={styles.coinCircleImage}
@@ -113,7 +113,7 @@ function CoinRowList({
           </View>
         )}
         {hasBack && (
-          <View style={[styles.coinImageFront, { borderColor: colors.surface.surface }]}>
+          <View style={[styles.coinImageFront, { borderColor: colors.surface.surface, backgroundColor: colors.surface.surface }]}>
             <Image
               source={{ uri: item.back_image_url! }}
               style={styles.coinCircleImage}
@@ -170,22 +170,42 @@ function CoinCardGrid({
         {(hasFront || hasBack) ? (
           <View style={styles.coinCardGridCoins}>
             {hasFront && (
-              <Image
-                source={{ uri: item.front_image_url! }}
-                style={styles.coinCardGridCoinImg}
-                contentFit="contain"
-                cachePolicy="disk"
-                transition={150}
-              />
+              <View
+                style={[
+                  styles.coinCardGridCoinBack,
+                  {
+                    borderColor: colors.surface.surface,
+                    backgroundColor: colors.surface.surface,
+                  },
+                ]}
+              >
+                <Image
+                  source={{ uri: item.front_image_url! }}
+                  style={styles.coinCardGridCoinImg}
+                  contentFit="cover"
+                  cachePolicy="disk"
+                  transition={150}
+                />
+              </View>
             )}
             {hasBack && (
-              <Image
-                source={{ uri: item.back_image_url! }}
-                style={[styles.coinCardGridCoinImg, hasFront && { marginLeft: -20 }]}
-                contentFit="contain"
-                cachePolicy="disk"
-                transition={150}
-              />
+              <View
+                style={[
+                  styles.coinCardGridCoinFront,
+                  {
+                    borderColor: colors.surface.surface,
+                    backgroundColor: colors.surface.surface,
+                  },
+                ]}
+              >
+                <Image
+                  source={{ uri: item.back_image_url! }}
+                  style={styles.coinCardGridCoinImg}
+                  contentFit="cover"
+                  cachePolicy="disk"
+                  transition={150}
+                />
+              </View>
             )}
           </View>
         ) : (
@@ -951,7 +971,7 @@ const styles = StyleSheet.create({
   },
   coinCardGridImageWrap: {
     width: '100%',
-    height: 180,
+    height: 140,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -962,10 +982,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  coinCardGridCoinImg: {
+  coinCardGridCoinBack: {
     width: 100,
     height: 100,
     borderRadius: 50,
+    overflow: 'hidden',
+    borderWidth: 3,
+    marginRight: -20,
+    zIndex: 1,
+  },
+  coinCardGridCoinFront: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    overflow: 'hidden',
+    borderWidth: 3,
+    marginLeft: -20,
+    zIndex: 2,
+  },
+  coinCardGridCoinImg: {
+    width: '100%',
+    height: '100%',
   },
   coinCardGridPlaceholder: {
     width: 80,
