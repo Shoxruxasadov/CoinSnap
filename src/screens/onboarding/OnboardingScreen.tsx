@@ -21,6 +21,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../navigation/RootStack';
 import { useOnboardingStore } from '../../store/onboardingStore';
+import Purchases from 'react-native-purchases';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -228,7 +229,7 @@ export default function OnboardingScreen() {
     }
   };
 
-  const onContinue = () => {
+  const onContinue = async () => {
     if (currentIndex < SLIDES.length - 1) {
       const nextIndex = currentIndex + 1;
       isProgrammaticScrollRef.current = true;
@@ -245,7 +246,13 @@ export default function OnboardingScreen() {
       });
     } else {
       completeOnboarding();
-      navigation.replace('GetStarted');
+      try {
+        const info = await Purchases.getCustomerInfo();
+        const isPro = Object.keys(info.entitlements.active).length > 0;
+        navigation.replace(isPro ? 'GetStarted' : 'Pro', isPro ? undefined : { fromOnboarding: true });
+      } catch {
+        navigation.replace('Pro', { fromOnboarding: true });
+      }
     }
   };
 

@@ -5,11 +5,13 @@ import OnboardingScreen from "../screens/onboarding/OnboardingScreen";
 import GetStartedScreen from "../screens/auth/GetStartedScreen";
 import SignInScreen from "../screens/auth/SignInScreen";
 import SignUpScreen from "../screens/auth/SignUpScreen";
+import ProScreen from "../screens/ProScreen";
 import MainStack from "./MainStack";
 
 export type RootStackParamList = {
   Onboarding: undefined;
   GetStarted: undefined;
+  Pro: { fromOnboarding?: boolean };
   SignIn: undefined;
   SignUp: undefined;
   Main: undefined;
@@ -54,6 +56,7 @@ export default function RootStack({
         options={{ gestureEnabled: false }}
       />
       <Stack.Screen name="GetStarted" component={GetStartedScreen} />
+      <Stack.Screen name="Pro" component={ProScreen} />
       <Stack.Screen name="SignIn" component={SignInScreen} />
       <Stack.Screen name="SignUp" component={SignUpScreen} />
       <Stack.Screen

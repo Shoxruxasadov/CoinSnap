@@ -13,10 +13,14 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import { ChevronLeft, Check } from 'lucide-react-native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { ChevronLeft, Check, X } from 'lucide-react-native';
 import { triggerSelection, triggerImpact } from '../lib/haptics';
 import Purchases, { PurchasesPackage } from 'react-native-purchases';
+import { useAuthStore } from '../store/authStore';
+import type { RootStackParamList } from '../navigation/RootStack';
+import type { MainStackParamList } from '../navigation/MainStack';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -29,9 +33,15 @@ const FEATURES = [
   'Join a Community of 10,000+ Collectors',
 ];
 
+type ProRoute = RouteProp<MainStackParamList & RootStackParamList, 'Pro'>;
+
 export default function ProScreen() {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList & RootStackParamList, 'Pro'>>();
+  const route = useRoute<ProRoute>();
+  const setSkipped = useAuthStore((s) => s.setSkipped);
+  const fromOnboarding = route.params?.fromOnboarding === true;
+
   const [selectedPlan, setSelectedPlan] = useState<Plan>('monthly');
   const [monthlyPkg, setMonthlyPkg] = useState<PurchasesPackage | null>(null);
   const [annualPkg, setAnnualPkg] = useState<PurchasesPackage | null>(null);
@@ -64,7 +74,23 @@ export default function ProScreen() {
 
   const handleBack = () => {
     triggerSelection();
-    navigation.goBack();
+    if (fromOnboarding) {
+      setSkipped();
+      navigation.replace('Main');
+    } else {
+      navigation.goBack();
+    }
+  };
+
+  const handleGetStarted = () => {
+    triggerSelection();
+    navigation.replace('GetStarted');
+  };
+
+  const handleSkip = () => {
+    triggerSelection();
+    setSkipped();
+    navigation.replace('Main');
   };
 
   const handleSelectPlan = (plan: Plan) => {
@@ -132,7 +158,7 @@ export default function ProScreen() {
 
       <View style={[styles.content, { paddingTop: insets.top }]}>
         <TouchableOpacity style={styles.backBtn} onPress={handleBack} activeOpacity={0.7}>
-          <ChevronLeft size={28} color="#fff" />
+          {fromOnboarding ? <X size={28} color="#fff" /> : <ChevronLeft size={28} color="#fff" />}
         </TouchableOpacity>
 
         <View style={styles.spacer} />
@@ -203,20 +229,33 @@ export default function ProScreen() {
 
             <Text style={styles.priceText}>{priceDescription}</Text>
 
-            <TouchableOpacity
-              style={[styles.ctaBtn, purchasing && { opacity: 0.6 }]}
-              onPress={handlePurchase}
-              activeOpacity={0.85}
-              disabled={purchasing}
-            >
-              {purchasing ? (
-                <ActivityIndicator color="#000" />
-              ) : (
-                <Text style={styles.ctaText}>
-                  CONTINUE
-                </Text>
-              )}
-            </TouchableOpacity>
+            {fromOnboarding ? (
+              <>
+                <TouchableOpacity
+                  style={styles.ctaBtn}
+                  onPress={handleGetStarted}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.ctaText}>Get Started</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleSkip} style={styles.skipWrap}>
+                  <Text style={styles.skipLink}>Skip</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={[styles.ctaBtn, purchasing && { opacity: 0.6 }]}
+                onPress={handlePurchase}
+                activeOpacity={0.85}
+                disabled={purchasing}
+              >
+                {purchasing ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <Text style={styles.ctaText}>CONTINUE</Text>
+                )}
+              </TouchableOpacity>
+            )}
           </>
         )}
 
@@ -367,6 +406,16 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '600',
     color: '#000',
+  },
+  skipWrap: {
+    alignItems: 'center',
+    marginTop: 12,
+    marginBottom: 24,
+  },
+  skipLink: {
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.6)',
+    fontWeight: '500',
   },
   footer: {
     flexDirection: 'row',

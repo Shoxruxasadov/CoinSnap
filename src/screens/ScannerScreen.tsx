@@ -17,7 +17,6 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import * as ImageManipulator from 'expo-image-manipulator';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
@@ -327,7 +326,6 @@ export default function ScannerScreen() {
   };
 
   const processImage = async (uri: string): Promise<string> => {
-    // Original rasmni qaytaramiz, API o'zi process qiladi
     return uri;
   };
 
@@ -359,7 +357,7 @@ export default function ScannerScreen() {
   };
 
   const handleCapture = async () => {
-    if (!frontImage && !backImage && scanCount >= 1 && !isPro) {
+    if (!__DEV__ && !frontImage && !backImage && scanCount >= 1 && !isPro) {
       navigation.navigate('Pro');
       return;
     }
@@ -372,20 +370,25 @@ export default function ScannerScreen() {
     triggerImpact();
 
     try {
-      console.log('Taking picture...');
+      const captureBoost = 1.0 / 14.5;
+      const prevZoom = zoom;
+      const captureZoom = Math.min(1, zoom + captureBoost);
+      setZoom(captureZoom);
+
+      await new Promise(resolve => setTimeout(resolve, 80));
+
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.85,
         skipProcessing: false,
       });
 
-      console.log('Photo taken:', photo?.uri ? 'URI received' : 'No URI');
+      setZoom(prevZoom);
 
       if (!photo?.uri) {
         Alert.alert('Error', 'Failed to capture photo. Please try again.');
         return;
       }
 
-      console.log('Processing image...');
       const processed = await processImage(photo.uri);
       console.log('Image processed:', processed);
 
@@ -404,17 +407,18 @@ export default function ScannerScreen() {
           setScanMode('observe');
         }
       }
-    } catch (err) {
-      console.error('Capture error:', err);
-      Alert.alert('Error', 'Failed to capture photo. Please try again.');
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      console.error('Capture error:', msg);
+      Alert.alert('Capture Error', msg);
     }
   };
 
   const handlePickFromGallery = async () => {
-    // if (!frontImage && !backImage && scanCount >= 1 && !isPro) {
-    //   navigation.navigate('Pro');
-    //   return;
-    // }
+    if (!__DEV__ && !frontImage && !backImage && scanCount >= 1 && !isPro) {
+      navigation.navigate('Pro');
+      return;
+    }
 
     triggerSelection();
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();

@@ -35,7 +35,7 @@ export type MainStackParamList = {
   EditProfile: undefined;
   ScannerScreen: undefined;
   ScanResult: { coin: any };
-  Pro: undefined;
+  Pro: { fromOnboarding?: boolean } | undefined;
   Achievements: undefined;
   Currency: undefined;
   FeatureRequest: undefined;

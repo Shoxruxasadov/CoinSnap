@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -11,6 +11,7 @@ import {
   Share,
   Linking,
 } from 'react-native';
+import Purchases from 'react-native-purchases';
 import {
   Trophy,
   DollarSign,
@@ -142,6 +143,18 @@ export default function ProfileScreen() {
 
   const isLoggedIn = !!session;
   const iconColor = colors.text.textAlt;
+  const [isPro, setIsPro] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const info = await Purchases.getCustomerInfo();
+        setIsPro(Object.keys(info.entitlements.active).length > 0);
+      } catch {
+        setIsPro(false);
+      }
+    })();
+  }, []);
 
   const handleAchievements = () => stackNav?.navigate('Achievements');
   const handleCurrency = () => stackNav?.navigate('Currency');
@@ -229,27 +242,29 @@ export default function ProfileScreen() {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.proBanner, { backgroundColor: colors.background.bgDark}]} activeOpacity={0.9} onPress={() => stackNav?.navigate('Pro')}>
-          <View style={styles.proBannerTexture}>
-            <ProCardTexture
-              width="100%"
-              height="100%"
-              preserveAspectRatio="xMidYMid slice"
-              style={StyleSheet.absoluteFill}
-            />
-          </View>
-          <View style={styles.proBannerContent}>
-            <View style={styles.proBannerTextWrap}>
-              <Text style={styles.proBannerTitle}>Upgrade to PRO</Text>
-              <Text style={styles.proBannerSub}>Enjoy exclusive features and benefits</Text>
+        {!isPro && (
+          <TouchableOpacity style={[styles.proBanner, { backgroundColor: colors.background.bgDark}]} activeOpacity={0.9} onPress={() => stackNav?.navigate('Pro')}>
+            <View style={styles.proBannerTexture}>
+              <ProCardTexture
+                width="100%"
+                height="100%"
+                preserveAspectRatio="xMidYMid slice"
+                style={StyleSheet.absoluteFill}
+              />
             </View>
-            <Image
-              source={require('../../../assets/profile/coins.png')}
-              style={styles.proBannerCoins}
-              resizeMode="cover"
-            />
-          </View>
-        </TouchableOpacity>
+            <View style={styles.proBannerContent}>
+              <View style={styles.proBannerTextWrap}>
+                <Text style={styles.proBannerTitle}>Upgrade to PRO</Text>
+                <Text style={styles.proBannerSub}>Enjoy exclusive features and benefits</Text>
+              </View>
+              <Image
+                source={require('../../../assets/profile/coins.png')}
+                style={styles.proBannerCoins}
+                resizeMode="cover"
+              />
+            </View>
+          </TouchableOpacity>
+        )}
 
         <Text style={[styles.sectionHeader, { color: colors.text.textAlt }]}>General</Text>
         <View style={[styles.section, { backgroundColor: colors.surface.onBgBase, borderColor: colors.border.border3 }]}>

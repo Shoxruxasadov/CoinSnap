@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import Purchases from 'react-native-purchases';
 import {
   StyleSheet,
   Text,
@@ -27,6 +28,18 @@ export default function HomeScreen() {
   const stackNav = navigation.getParent() as NativeStackNavigationProp<MainStackParamList> | undefined;
   const [blogPosts, setBlogPosts] = useState<BlogPost[]>([]);
   const [blogLoading, setBlogLoading] = useState(true);
+  const [isPro, setIsPro] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const info = await Purchases.getCustomerInfo();
+        setIsPro(Object.keys(info.entitlements.active).length > 0);
+      } catch {
+        setIsPro(false);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,10 +74,12 @@ export default function HomeScreen() {
           </View>
         </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity style={[styles.proBtn, { backgroundColor: colors.background.brand }]} onPress={() => stackNav?.navigate('Pro')}>
-            <Crown size={19} color={colors.text.textDark} fill={colors.text.textDark} />
-            <Text style={[styles.proText, { color: colors.text.textDark }]}>PRO</Text>
-          </TouchableOpacity>
+          {!isPro && (
+            <TouchableOpacity style={[styles.proBtn, { backgroundColor: colors.background.brand }]} onPress={() => stackNav?.navigate('Pro')}>
+              <Crown size={19} color={colors.text.textDark} fill={colors.text.textDark} />
+              <Text style={[styles.proText, { color: colors.text.textDark }]}>PRO</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={[styles.iconBtn, { backgroundColor: colors.surface.onBgBase }]} onPress={openSnapHistory}>
             <Clock size={20} color={colors.text.textBase} />
           </TouchableOpacity>
